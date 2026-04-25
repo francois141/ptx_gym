@@ -304,6 +304,8 @@ def triton_key():
     return f'{__version__}' + '-'.join(contents)
 
 
-def get_cache_key(src, backend, backend_options, env_vars):
+def get_cache_key(src, backend, backend_options, env_vars, ptx=None):
     key = f"{triton_key()}-{src.hash()}-{backend.hash()}-{backend_options.hash()}-{str(sorted(env_vars.items()))}"
+    if ptx is not None:
+        key = f"{key}-ptx-{hashlib.sha256(ptx.encode('utf-8')).hexdigest()}"
     return key

@@ -223,7 +223,7 @@ class CompileTimer:
         )
 
 
-def compile(src, target=None, options=None, _env_vars=None):
+def compile(src, target=None, options=None, _env_vars=None, ptx=None):
     compilation_listener = knobs.compilation.listener
     if compilation_listener:
         timer = CompileTimer()
@@ -243,7 +243,7 @@ def compile(src, target=None, options=None, _env_vars=None):
     options = backend.parse_options(dict(options or dict(), **extra_options))
     # create cache manager
     env_vars = get_cache_invalidating_env_vars() if _env_vars is None else _env_vars
-    key = get_cache_key(src, backend, options, env_vars=env_vars)
+    key = get_cache_key(src, backend, options, env_vars=env_vars, ptx=ptx)
     hash = hashlib.sha256(key.encode("utf-8")).hexdigest()
     fn_cache_manager = get_cache_manager(hash)
     # For dumping/overriding only hash the source as we want it to be independent of triton
@@ -321,6 +321,9 @@ def compile(src, target=None, options=None, _env_vars=None):
     if compilation_listener:
         timer.finished_ir_initialization()
     for ext, compile_ir in list(stages.items())[first_stage:]:
+        if ext == "cubin" and ptx is not None:
+            print("Injecting the ptx given as argument in the compilation pipeline")
+            module = ptx
         next_module = compile_ir(module, metadata)
         ir_filename = f"{file_name}.{ext}"
         if fn_override_manager is None:
