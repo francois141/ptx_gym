@@ -749,7 +749,7 @@ class JITFunction(JITCallable, KernelInterface[T]):
         return self._fn_name if self._repr is None else self._repr(_)
 
     def __init__(self, fn, version=None, do_not_specialize=None, do_not_specialize_on_alignment=None, debug=None,
-                 noinline=None, repr=None, launch_metadata=None):
+                 noinline=None, repr=None, launch_metadata=None, ptx=None):
         do_not_specialize = do_not_specialize if do_not_specialize else []
         do_not_specialize_on_alignment = do_not_specialize_on_alignment if do_not_specialize_on_alignment else []
 
@@ -783,6 +783,8 @@ class JITFunction(JITCallable, KernelInterface[T]):
 
         # Hooks that will be called prior to executing "run"
         self.pre_run_hooks = []
+
+        self.ptx = ptx
 
     def preload(self, specialization_data):
         import json
@@ -846,7 +848,7 @@ class JITFunction(JITCallable, KernelInterface[T]):
 
             kernel = async_mode.submit(cache_key, async_compile, finalize_compile)
         else:
-            kernel = self.compile(src, target=target, options=options.__dict__)
+            kernel = self.compile(src, target=target, options=options.__dict__, ptx=self.ptx)
             kernel_cache[key] = kernel
             self._call_hook(knobs.runtime.jit_post_compile_hook, key, signature, device, constexprs, options, [attrs],
                             warmup)
@@ -893,6 +895,7 @@ def jit(
     do_not_specialize_on_alignment: Optional[Iterable[int | str]] = None,
     debug: Optional[bool] = None,
     noinline: Optional[bool] = None,
+    ptx: Optional[String] = None,
 ) -> KernelInterface[T]:
     """
     Decorator for JIT-compiling a function using the Triton compiler.
@@ -929,6 +932,7 @@ def jit(
                 noinline=noinline,
                 repr=repr,
                 launch_metadata=launch_metadata,
+                ptx=ptx,
             )
 
     if fn is not None:
