@@ -322,7 +322,6 @@ def compile(src, target=None, options=None, _env_vars=None, ptx=None):
         timer.finished_ir_initialization()
     for ext, compile_ir in list(stages.items())[first_stage:]:
         if ext == "cubin" and ptx is not None:
-            print("Injecting the ptx given as argument in the compilation pipeline")
             module = ptx
         next_module = compile_ir(module, metadata)
         ir_filename = f"{file_name}.{ext}"

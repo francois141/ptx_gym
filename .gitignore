@@ -94,8 +94,15 @@ docs/sg_execution_times.rst
 # macOS
 .DS_Store
 
-# Generated prompts
-/generated_prompts/*.md
-
 output.txt
 results.jpg
+
+# Key
+openai_api_key.txt
+
+# Output from LLMS
+/database/
+/output/
+/triton_generated_ptx/
+/triton_ptx/prompts/initial/
+/triton_ptx/prompts/follow_up/

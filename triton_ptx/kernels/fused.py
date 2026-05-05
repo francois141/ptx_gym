@@ -2,17 +2,21 @@ import torch
 import triton
 import triton.language as tl
 
-from helpers import jit_fixed_parameters
+from triton_ptx.helpers import get_ptx_constexpr, jit_fixed_parameters
+from triton_ptx.kernels.base import TritonPTXOperator
+
+_ptx_kernel = {
+    "ptx": None,
+    "BLOCK_SIZE": None,
+}
 
 
-class FancyFusedOperator:
-    def __init__(self, *, size=100_000, block_size=1024, ptx=None):
-        self.size = size
+
+
+class FancyFusedOperator(TritonPTXOperator):
+    def __init__(self, *, block_size=1024, ptx=_ptx_kernel):
         self.block_size = block_size
-        self.compiled_kernel = jit_fixed_parameters(self.kernel)
-        self.ptx = ptx
-        if self.ptx is not None:
-            self.compiled_kernel_ptx = jit_fixed_parameters(self.kernel, ptx=ptx)
+        self.init_compiled_kernels(ptx=ptx, jit=jit_fixed_parameters)
 
     @staticmethod
     def kernel(
@@ -35,26 +39,25 @@ class FancyFusedOperator:
         result = e_c_x * sig_x2
         tl.store(output_ptr + offsets, result, mask=mask)
 
-    def get_random_input(self):
-        return torch.randn(self.size, device="cuda")
+    def get_random_input(self, size=100_000):
+        return torch.randn(size, device="cuda")
 
-    def forward_triton(self, inputs, ptx=False, use_ptx=None):
+    def forward_triton(self, inputs, ptx=False):
         x = inputs
         n_elements = x.numel()
         output = torch.empty_like(x)
         grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
-        if use_ptx is not None:
-            ptx = use_ptx
-
         if not ptx:
             kernel = self.compiled_kernel[grid](
-                x, output, n_elements, BLOCK_SIZE=self.block_size
+                x, output, n_elements, BLOCK_SIZE=self.block_size,
             )
         else:
-            assert self.ptx is not None
-            kernel = self.compiled_kernel_ptx[grid](
-                x, output, n_elements, BLOCK_SIZE=self.block_size
+            kernel = self.require_compiled_ptx()[grid](
+                x,
+                output,
+                n_elements,
+                BLOCK_SIZE=(get_ptx_constexpr(self.ptx, "BLOCK_SIZE") or self.block_size),
             )
         return output, kernel
 

@@ -2,28 +2,32 @@ import torch
 import triton
 import triton.language as tl
 
+from triton_ptx.helpers import get_ptx_constexpr
+from triton_ptx.kernels.base import TritonPTXOperator
 
-class MatrixMultiplicationOperator:
+_ptx_kernel = {
+    "ptx": None,
+    "BLOCK_SIZE_M": None,
+    "BLOCK_SIZE_N": None,
+    "BLOCK_SIZE_K": None,
+    "GROUP_SIZE_M": None,
+}
+
+
+class MatrixMultiplicationOperator(TritonPTXOperator):
     def __init__(
         self,
-        M=1024,
-        N=1024,
-        K=1024,
         BLOCK_SIZE_M=128,
         BLOCK_SIZE_N=128,
         BLOCK_SIZE_K=32,
         GROUP_SIZE_M=8,
-        ptx=None,
+        ptx=_ptx_kernel,
     ):
-        self.M, self.N, self.K = M, N, K
         self.BLOCK_SIZE_M = BLOCK_SIZE_M
         self.BLOCK_SIZE_N = BLOCK_SIZE_N
         self.BLOCK_SIZE_K = BLOCK_SIZE_K
         self.GROUP_SIZE_M = GROUP_SIZE_M
-        self.compiled_kernel = triton.jit(self.kernel)
-        self.ptx = ptx
-        if ptx is not None:
-            self.compiled_kernel_ptx = triton.jit(self.kernel, ptx=ptx)
+        self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
     def kernel(
@@ -80,7 +84,7 @@ class MatrixMultiplicationOperator:
         )
 
         accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
-        for _ in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
+        for _ in range(tl.cdiv(K, BLOCK_SIZE_K)):
             a = tl.load(A_block_ptr)
             b = tl.load(B_block_ptr)
             accumulator += tl.dot(a.to(tl.float32), b.to(tl.float32))
@@ -89,12 +93,12 @@ class MatrixMultiplicationOperator:
 
         tl.store(C_block_ptr, accumulator.to(C_ptr.dtype.element_ty))
 
-    def get_random_input(self):
-        a = torch.randn((self.M, self.K), device="cuda", dtype=torch.float32)
-        b = torch.randn((self.K, self.N), device="cuda", dtype=torch.float32)
+    def get_random_input(self, M=1024, N=1024, K=1024):
+        a = torch.randn((M, K), device="cuda", dtype=torch.float32)
+        b = torch.randn((K, N), device="cuda", dtype=torch.float32)
         return a, b
 
-    def forward_triton(self, inputs, ptx=False, use_ptx=None):
+    def forward_triton(self, inputs, ptx=False):
         a, b = inputs
         M, K = a.shape
         _, N = b.shape
@@ -102,9 +106,6 @@ class MatrixMultiplicationOperator:
         grid = lambda META: (
             triton.cdiv(M, META["BLOCK_SIZE_M"]) * triton.cdiv(N, META["BLOCK_SIZE_N"]),
         )
-
-        if use_ptx is not None:
-            ptx = use_ptx
 
         if not ptx:
             kernel = self.compiled_kernel[grid](
@@ -126,8 +127,14 @@ class MatrixMultiplicationOperator:
                 GROUP_SIZE_M=self.GROUP_SIZE_M,
             )
         else:
-            assert self.ptx is not None
-            kernel = self.compiled_kernel_ptx[grid](
+            ptx_block_m = (get_ptx_constexpr(self.ptx, "BLOCK_SIZE_M") or 32)
+            ptx_block_n = (get_ptx_constexpr(self.ptx, "BLOCK_SIZE_N") or 32)
+            ptx_block_k = (get_ptx_constexpr(self.ptx, "BLOCK_SIZE_K") or self.BLOCK_SIZE_K)
+            ptx_group_size_m = (get_ptx_constexpr(self.ptx, "GROUP_SIZE_M") or self.GROUP_SIZE_M)
+            ptx_grid = lambda META: (
+                triton.cdiv(M, ptx_block_m) * triton.cdiv(N, ptx_block_n),
+            )
+            kernel = self.require_compiled_ptx()[ptx_grid](
                 a,
                 b,
                 c,
@@ -140,10 +147,11 @@ class MatrixMultiplicationOperator:
                 b.stride(1),
                 c.stride(0),
                 c.stride(1),
-                BLOCK_SIZE_M=self.BLOCK_SIZE_M,
-                BLOCK_SIZE_N=self.BLOCK_SIZE_N,
-                BLOCK_SIZE_K=self.BLOCK_SIZE_K,
-                GROUP_SIZE_M=self.GROUP_SIZE_M,
+                BLOCK_SIZE_M=ptx_block_m,
+                BLOCK_SIZE_N=ptx_block_n,
+                BLOCK_SIZE_K=ptx_block_k,
+                GROUP_SIZE_M=ptx_group_size_m,
+                num_warps=8,
             )
         return c, kernel
 

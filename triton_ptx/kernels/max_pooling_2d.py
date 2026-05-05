@@ -2,19 +2,33 @@ import torch
 import triton
 import triton.language as tl
 
+from triton_ptx.helpers import get_ptx_constexpr
+from triton_ptx.kernels.base import TritonPTXOperator
 
-class MaxPooling2DOperator:
-    def __init__(self, H=128, W=128, kernel_size=2, stride=2, ptx=None):
-        self.H = H
-        self.W = W
-        self.kernel_size = kernel_size
-        self.stride = stride
+_ptx_kernel = {
+    "ptx": None,
+    "H": None,
+    "W": None,
+    "kernel_h": None,
+    "kernel_w": None,
+    "stride_h": None,
+    "stride_w": None,
+    "input_stride_h": None,
+    "input_stride_w": None,
+    "output_stride_h": None,
+    "output_stride_w": None,
+    "BLOCK_SIZE_H": None,
+    "BLOCK_SIZE_W": None,
+}
+
+
+
+
+class MaxPooling2DOperator(TritonPTXOperator):
+    def __init__(self, ptx=_ptx_kernel):
         self.BLOCK_SIZE_H = 8
         self.BLOCK_SIZE_W = 32
-        self.compiled_kernel = triton.jit(self.kernel)
-        self.ptx = ptx
-        if ptx is not None:
-            self.compiled_kernel_ptx = triton.jit(self.kernel, ptx=ptx)
+        self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
     def kernel(
@@ -57,13 +71,15 @@ class MaxPooling2DOperator:
         output_ptrs = output_ptr + offs_oh[:, None] * output_stride_h + offs_ow[None, :] * output_stride_w
         tl.store(output_ptrs, output_block, mask=output_mask)
 
-    def get_random_input(self):
-        input_tensor = torch.randn((1, 1, self.H, self.W), device="cuda", dtype=torch.float16)
-        return input_tensor, self.kernel_size, self.stride
+    def get_random_input(self, H=128, W=128, kernel_size=2, stride=2):
+        input_tensor = torch.randn((1, 1, H, W), device="cuda", dtype=torch.float16)
+        return input_tensor, kernel_size, stride
 
-    def forward_triton(self, inputs, ptx=False, use_ptx=None):
+    def forward_triton(self, inputs, ptx=False):
         input_tensor, kernel_size, stride = inputs
         n, c, h, w = input_tensor.shape
+        if n != 1 or c != 1:
+            raise ValueError("MaxPooling2DOperator currently supports only N=C=1 inputs.")
         output_h = (h - kernel_size) // stride + 1
         output_w = (w - kernel_size) // stride + 1
         output_tensor = torch.empty((n, c, output_h, output_w), device=input_tensor.device, dtype=input_tensor.dtype)
@@ -72,13 +88,10 @@ class MaxPooling2DOperator:
             triton.cdiv(output_w, meta["BLOCK_SIZE_W"]),
         )
 
-        if use_ptx is not None:
-            ptx = use_ptx
-
         if not ptx:
             kernel = self.compiled_kernel[grid](
-                input_tensor.squeeze(),
-                output_tensor.squeeze(),
+                input_tensor.reshape(h, w),
+                output_tensor.reshape(output_h, output_w),
                 h,
                 w,
                 kernel_size,
@@ -94,22 +107,31 @@ class MaxPooling2DOperator:
                 num_warps=4,
             )
         else:
-            assert self.ptx is not None
-            kernel = self.compiled_kernel_ptx[grid](
-                input_tensor.squeeze(),
-                output_tensor.squeeze(),
-                h,
-                w,
-                kernel_size,
-                kernel_size,
-                stride,
-                stride,
-                input_tensor.stride(-2),
-                input_tensor.stride(-1),
-                output_tensor.stride(-2),
-                output_tensor.stride(-1),
-                BLOCK_SIZE_H=self.BLOCK_SIZE_H,
-                BLOCK_SIZE_W=self.BLOCK_SIZE_W,
+            ptx_h = (get_ptx_constexpr(self.ptx, "H") or h)
+            ptx_w = (get_ptx_constexpr(self.ptx, "W") or w)
+            ptx_kernel_h = (get_ptx_constexpr(self.ptx, "kernel_h") or kernel_size)
+            ptx_kernel_w = (get_ptx_constexpr(self.ptx, "kernel_w") or kernel_size)
+            ptx_stride_h = (get_ptx_constexpr(self.ptx, "stride_h") or stride)
+            ptx_stride_w = (get_ptx_constexpr(self.ptx, "stride_w") or stride)
+            ptx_input_stride_h = (get_ptx_constexpr(self.ptx, "input_stride_h") or input_tensor.stride(-2))
+            ptx_input_stride_w = (get_ptx_constexpr(self.ptx, "input_stride_w") or input_tensor.stride(-1))
+            ptx_output_stride_h = (get_ptx_constexpr(self.ptx, "output_stride_h") or output_tensor.stride(-2))
+            ptx_output_stride_w = (get_ptx_constexpr(self.ptx, "output_stride_w") or output_tensor.stride(-1))
+            kernel = self.require_compiled_ptx()[grid](
+                input_tensor.reshape(h, w),
+                output_tensor.reshape(output_h, output_w),
+                ptx_h,
+                ptx_w,
+                ptx_kernel_h,
+                ptx_kernel_w,
+                ptx_stride_h,
+                ptx_stride_w,
+                ptx_input_stride_h,
+                ptx_input_stride_w,
+                ptx_output_stride_h,
+                ptx_output_stride_w,
+                BLOCK_SIZE_H=(get_ptx_constexpr(self.ptx, "BLOCK_SIZE_H") or self.BLOCK_SIZE_H),
+                BLOCK_SIZE_W=(get_ptx_constexpr(self.ptx, "BLOCK_SIZE_W") or self.BLOCK_SIZE_W),
                 num_warps=4,
             )
         return output_tensor, kernel

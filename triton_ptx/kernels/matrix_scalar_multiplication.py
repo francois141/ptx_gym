@@ -2,17 +2,23 @@ import torch
 import triton
 import triton.language as tl
 
+from triton_ptx.helpers import get_ptx_constexpr
+from triton_ptx.kernels.base import TritonPTXOperator
 
-class MatrixScalarMultiplicationOperator:
-    def __init__(self, M=1024, N=1024, block_size_m=128, block_size_n=128, ptx=None):
-        self.M = M
-        self.N = N
+_ptx_kernel = {
+    "ptx": None,
+    "BLOCK_SIZE_M": None,
+    "BLOCK_SIZE_N": None,
+}
+
+
+
+
+class MatrixScalarMultiplicationOperator(TritonPTXOperator):
+    def __init__(self, block_size_m=128, block_size_n=128, ptx=_ptx_kernel):
         self.BLOCK_SIZE_M = block_size_m
         self.BLOCK_SIZE_N = block_size_n
-        self.compiled_kernel = triton.jit(self.kernel)
-        self.ptx = ptx
-        if ptx is not None:
-            self.compiled_kernel_ptx = triton.jit(self.kernel, ptx=ptx)
+        self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
     def kernel(
@@ -38,12 +44,12 @@ class MatrixScalarMultiplicationOperator:
         a = tl.load(A_ptrs, mask=mask)
         tl.store(C_ptrs, (a * scalar).to(C_ptr.dtype.element_ty), mask=mask)
 
-    def get_random_input(self):
-        a = torch.randn((self.M, self.N), device="cuda", dtype=torch.float16)
+    def get_random_input(self, M=1024, N=1024):
+        a = torch.randn((M, N), device="cuda", dtype=torch.float16)
         scalar = torch.randn(1, device="cuda", dtype=torch.float16).item()
         return a, scalar
 
-    def forward_triton(self, inputs, ptx=False, use_ptx=None):
+    def forward_triton(self, inputs, ptx=False):
         a, scalar = inputs
         M, N = a.shape
         c = torch.empty_like(a)
@@ -51,9 +57,6 @@ class MatrixScalarMultiplicationOperator:
             triton.cdiv(M, meta["BLOCK_SIZE_M"]),
             triton.cdiv(N, meta["BLOCK_SIZE_N"]),
         )
-
-        if use_ptx is not None:
-            ptx = use_ptx
 
         if not ptx:
             kernel = self.compiled_kernel[grid](
@@ -70,8 +73,7 @@ class MatrixScalarMultiplicationOperator:
                 BLOCK_SIZE_N=self.BLOCK_SIZE_N,
             )
         else:
-            assert self.ptx is not None
-            kernel = self.compiled_kernel_ptx[grid](
+            kernel = self.require_compiled_ptx()[grid](
                 a,
                 scalar,
                 c,
@@ -81,8 +83,8 @@ class MatrixScalarMultiplicationOperator:
                 a.stride(1),
                 c.stride(0),
                 c.stride(1),
-                BLOCK_SIZE_M=self.BLOCK_SIZE_M,
-                BLOCK_SIZE_N=self.BLOCK_SIZE_N,
+                BLOCK_SIZE_M=(get_ptx_constexpr(self.ptx, "BLOCK_SIZE_M") or self.BLOCK_SIZE_M),
+                BLOCK_SIZE_N=(get_ptx_constexpr(self.ptx, "BLOCK_SIZE_N") or self.BLOCK_SIZE_N),
             )
         return c, kernel
 
