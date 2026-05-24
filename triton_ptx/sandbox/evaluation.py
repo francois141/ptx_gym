@@ -16,11 +16,11 @@ from triton_ptx.helpers import (
     has_ptx_code,
     clear_triton_cache,
 )
-from triton_ptx.kernels import test_operator
+from triton_ptx.kernels import test_kernel
 
 
 COLUMNS = [
-    "Operator Name", "Status",
+    "Kernel Name", "Status",
     "Triton p20 (ms)", "Triton p50 (ms)", "Triton p80 (ms)",
     "Triton PTX p20 (ms)", "Triton PTX p50 (ms)", "Triton PTX p80 (ms)",
     "Torch p20 (ms)", "Torch p50 (ms)", "Torch p80 (ms)",
@@ -39,26 +39,26 @@ class Timing:
 
 
 class BenchmarkRunnerBase(ABC):
-    def __init__(self, operators):
-        self.operators = list(operators)
+    def __init__(self, kernels):
+        self.kernels = list(kernels)
         self.rows: list[dict[str, Any]] = []
 
     def run(self):
         clear_triton_cache()
 
-        for operator_cls in self.operators:
-            self.run_operator(operator_cls)
+        for kernel_cls in self.kernels:
+            self.run_kernel(kernel_cls)
 
         table = pd.DataFrame(self.rows, columns=COLUMNS)
         self.plot_results(table)
 
         return table
 
-    def run_operator(self, operator_cls) -> None:
-        name = operator_cls.__name__
+    def run_kernel(self, kernel_cls) -> None:
+        name = kernel_cls.__name__
 
         try:
-            op = operator_cls()
+            op = kernel_cls()
 
             if not self.should_run(op):
                 return
@@ -116,7 +116,7 @@ class BenchmarkRunnerBase(ABC):
 
     def empty_row(self, name: str, status: str) -> dict[str, Any]:
         return dict.fromkeys(COLUMNS, 0.0) | {
-            "Operator Name": name,
+            "Kernel Name": name,
             "Status": status,
         }
 
@@ -141,7 +141,7 @@ class BenchmarkRunnerBase(ABC):
 
     def result_row(self, name: str, metrics: dict[str, Any]) -> dict[str, Any]:
         return {
-            "Operator Name": name,
+            "Kernel Name": name,
             "Status": "PASSED",
             **self.timing_cols("Triton", metrics["triton"]),
             **self.timing_cols("Triton PTX", metrics["ptx"]),
@@ -194,7 +194,7 @@ class BenchmarkRunnerBase(ABC):
             cols.insert(1, "Triton PTX p50 (ms)")
 
         ax = passed.plot(
-            x="Operator Name",
+            x="Kernel Name",
             y=cols,
             kind="bar",
             figsize=(12, 6),
@@ -228,7 +228,7 @@ class PTXBenchmarkRunner(BenchmarkRunnerBase):
 
 
 def main():
-    PTXBenchmarkRunner([test_operator]).run()
+    PTXBenchmarkRunner([test_kernel]).run()
 
 if __name__ == "__main__":
     main()

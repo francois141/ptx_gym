@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 import contextlib
 import io
 
-from triton_ptx.kernels import test_operator
+from triton_ptx.kernels import test_kernel
 
 
 class CompilationRunnerBase(ABC):
@@ -16,7 +16,7 @@ class CompilationRunnerBase(ABC):
         self.kernel = kernel
         self.ptx_code = ptx_code
 
-    def create_operator(self):
+    def create_kernel(self):
         return self.kernel(ptx=self.ptx_code)
 
     @abstractmethod
@@ -25,7 +25,7 @@ class CompilationRunnerBase(ABC):
 
 class PTXCompilationRunner(CompilationRunnerBase):
     def run(self):
-        op = self.create_operator()
+        op = self.create_kernel()
 
         # Suppress stdout/stderr during compilation
         with contextlib.redirect_stdout(io.StringIO()), \
@@ -90,7 +90,7 @@ def run_ptx_compilation(kernel, ptx_code):
 
 
 if __name__ == "__main__":
-    kernel = test_operator
+    kernel = test_kernel
 
 
     invalid_ptx = run_ptx_compilation(

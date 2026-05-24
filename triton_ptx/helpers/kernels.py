@@ -142,7 +142,7 @@ def _extract_specification_from_module_source(source, *, filename):
         class_node
         for class_node in module.body
         if isinstance(class_node, ast.ClassDef)
-        and class_node.name.endswith("Operator")
+        and class_node.name.endswith("Kernel")
     ]
 
     if not operator_nodes:
@@ -165,7 +165,7 @@ def _extract_specification_from_module_source(source, *, filename):
 
     if kernel_node is None:
         raise ValueError(
-            f"Operator {class_node.name} in {filename} is missing a kernel method"
+            f"Kernel {class_node.name} in {filename} is missing a kernel method"
         )
 
     kernel_source = "".join(

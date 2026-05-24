@@ -9,20 +9,20 @@ from triton_ptx.policy import select_winner
 from triton_ptx.generator import OpenAIPrompt
 from triton_ptx.helpers import JsonDatasetWriter
 from triton_ptx.helpers import get_ptx_system_config
-from triton_ptx.kernels import resolve_operator
+from triton_ptx.kernels import resolve_kernel
 from triton_ptx.prompts import build_prompt_for_operator
 from triton_ptx.prompts import build_follow_up_prompt_for_operator
 
 
 def run_test_time_scaling_loop(
-    operator_name: str,
+    kernel_name: str,
     *,
     rounds: int = 10,
     k: int = 3,
     output_root: Path,
 ) -> Path:
 
-    operator_cls = resolve_operator(operator_name)
+    kernel_cls = resolve_kernel(kernel_name)
 
     output_root = Path(output_root)
     output_root.mkdir(parents=True, exist_ok=True)
@@ -35,12 +35,12 @@ def run_test_time_scaling_loop(
 
     prompter = OpenAIPrompt()
     evaluator = TritonPTXCandidateEvaluator(
-        operator_cls
+        kernel_cls
     )
     output_writer = JsonDatasetWriter(dataset_dir=output_root)
     archive_writer = JsonDatasetWriter(dataset_dir=run_archive_root)
 
-    current_prompt = build_prompt_for_operator(operator_cls, num_answers=k)
+    current_prompt = build_prompt_for_operator(kernel_cls, num_answers=k)
     (output_root / "initial_prompt.md").write_text(current_prompt + "\n", encoding="utf-8")
     (run_archive_root / "initial_prompt.md").write_text(current_prompt + "\n", encoding="utf-8")
 
@@ -73,7 +73,7 @@ def run_test_time_scaling_loop(
 
         follow_up_prompt = build_follow_up_prompt_for_operator(
             current_candidates,
-            operator_cls,
+            kernel_cls,
             num_answers=k,
         )
 
@@ -91,9 +91,9 @@ def parse_args() -> argparse.Namespace:
     default_version, default_target, default_address_size = get_ptx_system_config()
 
     parser = argparse.ArgumentParser(
-        description="Run a manual per-operator PTX test-time scaling loop."
+        description="Run a manual per-kernel PTX test-time scaling loop."
     )
-    parser.add_argument("operator", help="Operator class name, for example AddOperator.")
+    parser.add_argument("kernel", help="Kernel class name, for example AddKernel.")
     parser.add_argument("--rounds", type=int, default=10, help="Number of test-time scaling rounds.")
     parser.add_argument("--k", type=int, default=2, help="Sample size for best-of-k candidate selection.")
     parser.add_argument(
@@ -124,7 +124,7 @@ def main() -> None:
         raise ValueError("--k must be positive")
 
     run_test_time_scaling_loop(
-        args.operator,
+        args.kernel,
         rounds=args.rounds,
         k=args.k,
         output_root=args.output_dir,

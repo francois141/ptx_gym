@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 from triton_ptx.sandbox import PTXBenchmarkRunner
-from triton_ptx.kernels import operator_list
+from triton_ptx.kernels import kernel_list
 
 def main():
-    runner = PTXBenchmarkRunner(operator_list)
+    runner = PTXBenchmarkRunner(kernel_list)
     print(runner.run())
 
 

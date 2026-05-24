@@ -27,7 +27,7 @@ python3 -m triton_ptx.helpers.environment
 Run the loop for a specific operator:
 
 ```bash
-python3 -m triton_ptx.test_time_scaling_loop AddOperator
+python3 -m triton_ptx.test_time_scaling_loop AddKernel
 ```
 
 Run with default configuration:

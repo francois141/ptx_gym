@@ -3,7 +3,7 @@ import argparse
 from pathlib import Path
 
 
-from triton_ptx.kernels import operator_list
+from triton_ptx.kernels import kernel_list
 from triton_ptx.helpers import is_gpu_available, dump_kernel_ptx
 
 
@@ -30,7 +30,7 @@ def main(output_dir: str) -> None:
 
     failed_kernels = []
 
-    for op in operator_list:
+    for op in kernel_list:
         kernel = op()
         kernel_name = kernel.__class__.__name__
 

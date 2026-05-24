@@ -8,7 +8,7 @@ import triton
 from triton_ptx.helpers import get_ptx_code, has_ptx_code
 
 
-class TritonPTXOperator(ABC):
+class TritonPTXKernel(ABC):
     """Shared lifecycle helpers for Triton operators with optional PTX overrides."""
 
     ptx: Any

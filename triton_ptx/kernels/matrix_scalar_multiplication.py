@@ -3,7 +3,7 @@ import triton
 import triton.language as tl
 
 from triton_ptx.helpers import get_ptx_constexpr
-from triton_ptx.kernels.base import TritonPTXOperator
+from triton_ptx.kernels.base import TritonPTXKernel
 
 _ptx_kernel = {
     "ptx": None,
@@ -14,7 +14,7 @@ _ptx_kernel = {
 
 
 
-class MatrixScalarMultiplicationOperator(TritonPTXOperator):
+class MatrixScalarMultiplicationKernel(TritonPTXKernel):
     def __init__(self, block_size_m=128, block_size_n=128, ptx=_ptx_kernel):
         self.BLOCK_SIZE_M = block_size_m
         self.BLOCK_SIZE_N = block_size_n

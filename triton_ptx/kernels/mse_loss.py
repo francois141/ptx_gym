@@ -3,7 +3,7 @@ import triton
 import triton.language as tl
 
 from triton_ptx.helpers import get_ptx_constexpr
-from triton_ptx.kernels.base import TritonPTXOperator
+from triton_ptx.kernels.base import TritonPTXKernel
 
 _ptx_kernel = {
 "ptx": None,
@@ -14,7 +14,7 @@ _ptx_kernel = {
 
 
 
-class MSELossOperator(TritonPTXOperator):
+class MSELossKernel(TritonPTXKernel):
     def __init__(self, block_size=1024, ptx=_ptx_kernel):
         self.block_size = block_size
         self.init_compiled_kernels(ptx=ptx)

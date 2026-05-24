@@ -3,7 +3,7 @@ import triton
 import triton.language as tl
 
 from triton_ptx.helpers import get_ptx_constexpr
-from triton_ptx.kernels.base import TritonPTXOperator
+from triton_ptx.kernels.base import TritonPTXKernel
 
 _ptx_kernel = {
     "ptx": None,
@@ -24,7 +24,7 @@ _ptx_kernel = {
 
 
 
-class MaxPooling2DOperator(TritonPTXOperator):
+class MaxPooling2DKernel(TritonPTXKernel):
     def __init__(self, ptx=_ptx_kernel):
         self.BLOCK_SIZE_H = 8
         self.BLOCK_SIZE_W = 32
@@ -79,7 +79,7 @@ class MaxPooling2DOperator(TritonPTXOperator):
         input_tensor, kernel_size, stride = inputs
         n, c, h, w = input_tensor.shape
         if n != 1 or c != 1:
-            raise ValueError("MaxPooling2DOperator currently supports only N=C=1 inputs.")
+            raise ValueError("MaxPooling2DKernel currently supports only N=C=1 inputs.")
         output_h = (h - kernel_size) // stride + 1
         output_w = (w - kernel_size) // stride + 1
         output_tensor = torch.empty((n, c, output_h, output_w), device=input_tensor.device, dtype=input_tensor.dtype)

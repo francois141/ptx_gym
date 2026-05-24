@@ -1,5 +1,5 @@
 
-from triton_ptx.kernels import operator_list
+from triton_ptx.kernels import kernel_list
 from triton_ptx.helpers import has_ptx_code
 from triton_ptx.sandbox import OutputVerifier
 
@@ -26,8 +26,8 @@ def test_kernel(kernel, num_runs: int) -> bool:
 def run_tests():
     failed_kernels = []
 
-    for operator in operator_list:
-        kernel = operator()
+    for kernel_cls in kernel_list:
+        kernel = kernel_cls()
 
         if not test_kernel(kernel, 10):
             failed_kernels.append(type(kernel).__name__)

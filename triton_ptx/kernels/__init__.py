@@ -1,50 +1,50 @@
-from .add import AddOperator
-from .fused import FancyFusedOperator
-from .matmul import MatrixMultiplicationOperator
-from .matrix_scalar_multiplication import MatrixScalarMultiplicationOperator
-from .max_pooling_2d import MaxPooling2DOperator
-from .mse_loss import MSELossOperator
-from .reduce_sum import ReduceSumOperator
-from .relu import ReLUOperator
-from .relu_reduction import ReLUReductionOperator
-from .sigmoid import SigmoidOperator
+from .add import AddKernel
+from .fused import FancyFusedKernel
+from .matmul import MatrixMultiplicationKernel
+from .matrix_scalar_multiplication import MatrixScalarMultiplicationKernel
+from .max_pooling_2d import MaxPooling2DKernel
+from .mse_loss import MSELossKernel
+from .reduce_sum import ReduceSumKernel
+from .relu import ReLUKernel
+from .relu_reduction import ReLUReductionKernel
+from .sigmoid import SigmoidKernel
 
 __all__ = [
-    "AddOperator",
-    "FancyFusedOperator",
-    "MSELossOperator",
-    "MatrixMultiplicationOperator",
-    "MatrixScalarMultiplicationOperator",
-    "MaxPooling2DOperator",
-    "ReLUOperator",
-    "ReLUReductionOperator",
-    "ReduceSumOperator",
-    "SigmoidOperator",
+    "AddKernel",
+    "FancyFusedKernel",
+    "MSELossKernel",
+    "MatrixMultiplicationKernel",
+    "MatrixScalarMultiplicationKernel",
+    "MaxPooling2DKernel",
+    "ReLUKernel",
+    "ReLUReductionKernel",
+    "ReduceSumKernel",
+    "SigmoidKernel",
 ]
 
-def available_operators() -> dict[str, type]:
-    return {operator.__name__: operator for operator in operator_list}
+def available_kernels() -> dict[str, type]:
+    return {operator.__name__: operator for operator in kernel_list}
 
 
-def resolve_operator(name: str) -> type:
-    operators = available_operators()
-    if name not in operators:
-        available = ", ".join(sorted(operators))
-        raise ValueError(f"Unknown operator {name!r}. Available operators: {available}")
-    return operators[name]
+def resolve_kernel(name: str) -> type:
+    kernels = available_kernels()
+    if name not in kernels:
+        available = ", ".join(sorted(kernels))
+        raise ValueError(f"Unknown kernel {name!r}. Available kernels: {available}")
+    return kernels[name]
 
 
-operator_list = [
-    AddOperator,
-    FancyFusedOperator,
-    MSELossOperator,
-    MaxPooling2DOperator,
-    MatrixScalarMultiplicationOperator,
-    ReduceSumOperator,
-    ReLUOperator,
-    ReLUReductionOperator,
-    MatrixMultiplicationOperator,
-    SigmoidOperator,
+kernel_list = [
+    AddKernel,
+    FancyFusedKernel,
+    MSELossKernel,
+    MaxPooling2DKernel,
+    MatrixScalarMultiplicationKernel,
+    ReduceSumKernel,
+    ReLUKernel,
+    ReLUReductionKernel,
+    MatrixMultiplicationKernel,
+    SigmoidKernel,
 ]
 
-test_operator = AddOperator
+test_kernel = AddKernel
