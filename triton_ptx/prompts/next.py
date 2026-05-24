@@ -14,7 +14,7 @@ from triton_ptx.prompts import (
     output_contract,
     performance_rules,
     ptx_header,
-    signature_rules,
+    signature_template,
     triton_kernel_block,
 )
 
@@ -127,7 +127,13 @@ def prompt_builder(
             address_size=address_size,
         ).strip(),
         extracted_signature_information(spec.parameters),
-        signature_rules(),
+        signature_template(
+            spec.parameters,
+            version=version,
+            target=target,
+            address_size=address_size,
+            kernel_name=spec.kernel_name,
+        ),
         correctness_rules(),
         performance_rules(target, version),
         triton_kernel_block(spec.source),
