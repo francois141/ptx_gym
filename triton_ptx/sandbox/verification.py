@@ -1,197 +1,260 @@
 from abc import ABC, abstractmethod
 import inspect
+import random
+
 import torch
 from triton_ptx.helpers import has_ptx_code
+from triton_ptx.kernels import test_operator
+
 
 class BaseVerifier(ABC):
-    """Abstract parent class for verifiers."""
-
     @abstractmethod
     def verify(self, op) -> bool:
-        """Run verification logic."""
         pass
 
 
 class OutputVerifier(BaseVerifier):
-    """Verifies Triton/PTX outputs against Torch output."""
-
-    MAX_RANDOM_INPUT_VALUES = 2 * 10**7
+    MAX_VALUES = 2 * 10**7
 
     def __init__(
         self,
-        num_samples: int = 20,
-        growth_factor: float = 1.5,
-        runs_per_phase: int = 40,
+        sizes=(4, 8, 16, 32, 64, 128),
+        iters_per_size=100,
+        seed=42,
+        rtol=1e-2,
+        atol=1e-2,
+        max_print=32,
     ):
-        self.num_samples = max(1, int(num_samples))
-        self.growth_factor = max(1.0, float(growth_factor))
-        self.runs_per_phase = max(1, int(runs_per_phase))
+        self.sizes = sizes
+        self.iters_per_size = iters_per_size
+        self.seed = seed
+        self.rtol = rtol
+        self.atol = atol
+        self.max_print = max_print
         self.last_report = {}
 
-    def check_similarity(self, actual, expected, rtol=1e-2, atol=1e-2) -> bool:
-        return actual.shape == expected.shape and torch.allclose(
+    def _is_size_arg(self, name):
+        name = name.lower()
+        return (
+            any(x in name for x in ("size", "m", "n", "k", "h", "w", "len"))
+            and not any(x in name for x in ("kernel", "stride", "block", "tile"))
+        )
+
+    def _kwargs(self, op, size):
+        return {
+            name: size if self._is_size_arg(name) else 4
+            for name, param in inspect.signature(op.get_random_input).parameters.items()
+            if param.default is not inspect._empty
+        }
+
+    def _numel(self, x):
+        if isinstance(x, torch.Tensor):
+            return x.numel()
+        if isinstance(x, (list, tuple)):
+            return sum(self._numel(v) for v in x)
+        if isinstance(x, dict):
+            return sum(self._numel(v) for v in x.values())
+        return 0
+
+    def _same(self, actual, expected):
+        return (
+            actual.shape == expected.shape
+            and torch.allclose(
+                actual,
+                expected.to(actual.dtype),
+                rtol=self.rtol,
+                atol=self.atol,
+                equal_nan=True,
+            )
+        )
+
+    def _bad_indices(self, actual, expected):
+        expected = expected.to(actual.dtype)
+
+        ok = torch.isclose(
             actual,
-            expected.to(actual.dtype),
-            rtol=rtol,
-            atol=atol,
+            expected,
+            rtol=self.rtol,
+            atol=self.atol,
             equal_nan=True,
         )
 
-    def _should_scale_arg(self, name: str) -> bool:
-        name = name.lower()
-        if any(token in name for token in ("kernel", "stride", "block", "tile")):
-            return False
-        return any(token in name for token in ("size", "m", "n", "k", "h", "w", "len"))
+        return (~ok).nonzero(as_tuple=False)[: self.max_print]
 
-    def _count_tensor_values(self, value) -> int:
-        if isinstance(value, torch.Tensor):
-            return int(value.numel())
-        if isinstance(value, (list, tuple)):
-            return sum(self._count_tensor_values(v) for v in value)
-        if isinstance(value, dict):
-            return sum(self._count_tensor_values(v) for v in value.values())
-        return 0
-
-    def _phase_for_sample(self, sample_index: int, scalable_args):
-        if not scalable_args:
-            return None, 0, 0, 0
-
-        phase_index = sample_index // self.runs_per_phase
-        active_dimension_index = phase_index % len(scalable_args)
-        phase_round = phase_index // len(scalable_args)
-        return (
-            scalable_args[active_dimension_index],
-            active_dimension_index,
-            phase_index,
-            phase_round,
-        )
-
-    def _scaled_random_input(self, op, sample_index: int):
-        signature = inspect.signature(op.get_random_input)
-        kwargs = {}
-        scalable_args = []
-
-        for name, param in signature.parameters.items():
-            if param.default is inspect._empty:
-                continue
-            default = 4
-            if isinstance(default, int) and self._should_scale_arg(name):
-                kwargs[name] = default
-                scalable_args.append(name)
-            else:
-                kwargs[name] = default
-
-        active_dimension, active_dimension_index, phase_index, phase_round = (
-            self._phase_for_sample(sample_index, scalable_args)
-        )
-        dimension_scale_steps = {}
-        for dimension_index, name in enumerate(scalable_args):
-            scale_step = phase_round + int(dimension_index <= active_dimension_index)
-            dimension_scale_steps[name] = scale_step
-            kwargs[name] = max(1, int(4 * (self.growth_factor ** scale_step)))
-
-        while True:
-            inputs = op.get_random_input(**kwargs)
-            num_values = self._count_tensor_values(inputs)
-            if num_values <= self.MAX_RANDOM_INPUT_VALUES:
-                kwargs["max_allowed_values"] = self.MAX_RANDOM_INPUT_VALUES
-                kwargs["num_values"] = num_values
-                kwargs["runs_per_phase"] = self.runs_per_phase
-                kwargs["phase_index"] = phase_index
-                kwargs["active_dimension"] = active_dimension
-                kwargs["active_dimension_index"] = active_dimension_index
-                kwargs["phase_round"] = phase_round
-                kwargs["dimension_scale_steps"] = dimension_scale_steps
-                return inputs, kwargs
-
-            if not scalable_args:
-                raise ValueError(
-                    f"Random input contains {num_values} values, above the "
-                    f"max allowed threshold of {self.MAX_RANDOM_INPUT_VALUES}, "
-                    "and no scalable get_random_input arguments were found."
-                )
-
-            shrink_factor = (self.MAX_RANDOM_INPUT_VALUES / num_values) ** (
-                1 / len(scalable_args)
-            )
-            previous_kwargs = kwargs.copy()
-            for name in scalable_args:
-                kwargs[name] = max(1, int(kwargs[name] * shrink_factor))
-
-            if all(kwargs[name] == previous_kwargs[name] for name in scalable_args):
-                if all(kwargs[name] == 1 for name in scalable_args):
-                    raise ValueError(
-                        f"Random input contains {num_values} values, above the "
-                        f"max allowed threshold of {self.MAX_RANDOM_INPUT_VALUES}, "
-                        "even with all scalable get_random_input arguments set to 1."
-                    )
-                largest_arg = max(scalable_args, key=lambda name: kwargs[name])
-                kwargs[largest_arg] = max(1, kwargs[largest_arg] - 1)
-
-    def _serialize_value(self, value):
-        if isinstance(value, torch.Tensor):
-            info = {
-                "type": "tensor",
-                "shape": list(value.shape),
-                "dtype": str(value.dtype),
-                "device": str(value.device),
-                "numel": int(value.numel()),
+    def _dump(self, x):
+        if isinstance(x, torch.Tensor):
+            return {
+                "shape": tuple(x.shape),
+                "dtype": str(x.dtype),
+                "device": str(x.device),
+                "values": x.detach().cpu(),
             }
-            if value.numel() > 0:
-                cpu = value.detach().flatten().to("cpu")
-                finite = cpu[torch.isfinite(cpu)]
-                if finite.numel() > 0:
-                    info["min"] = float(finite.min().item())
-                    info["max"] = float(finite.max().item())
-                    info["mean"] = float(finite.mean().item())
-                preview = cpu[: min(64, cpu.numel())].tolist()
-                info["preview"] = preview
-            return info
 
-        if isinstance(value, (list, tuple)):
-            return [self._serialize_value(v) for v in value]
-        if isinstance(value, dict):
-            return {k: self._serialize_value(v) for k, v in value.items()}
-        if isinstance(value, (int, float, bool, str)) or value is None:
-            return value
-        return repr(value)
+        if isinstance(x, (list, tuple)):
+            return [self._dump(v) for v in x]
+
+        if isinstance(x, dict):
+            return {k: self._dump(v) for k, v in x.items()}
+
+        return x
+
+    def _failure_report(
+        self,
+        size,
+        iteration,
+        kwargs,
+        inputs,
+        triton_out,
+        expected_out,
+        expected_name="ptx",
+    ):
+        expected_output_key = f"{expected_name}_output"
+        report = {
+            "status": "failed",
+            "seed": self.seed,
+            "size": size,
+            "iteration": iteration,
+            "kwargs": kwargs,
+            "inputs": self._dump(inputs),
+            "triton_output": self._dump(triton_out),
+            expected_output_key: self._dump(expected_out),
+        }
+
+        if not isinstance(expected_out, torch.Tensor) or not isinstance(triton_out, torch.Tensor):
+            return report
+
+        if expected_out.shape != triton_out.shape:
+            report["error"] = {
+                "type": "shape_mismatch",
+                f"{expected_name}_shape": tuple(expected_out.shape),
+                "triton_shape": tuple(triton_out.shape),
+            }
+            return report
+
+        bad = self._bad_indices(expected_out, triton_out)
+        report["wrong_indices"] = bad.cpu()
+        report["wrong_values"] = [
+            {
+                "index": tuple(idx.tolist()),
+                expected_name: expected_out[tuple(idx)].detach().cpu().item(),
+                "triton": triton_out[tuple(idx)].detach().cpu().item(),
+            }
+            for idx in bad
+        ]
+
+        return report
 
     def verify(self, op) -> bool:
         assert has_ptx_code(getattr(op, "ptx", None))
 
-        last_success = None
-        for sample_index in range(self.num_samples):
-            inputs, scaled_kwargs = self._scaled_random_input(op, sample_index)
-            triton_out, _ = op.forward_triton(inputs)
-            ptx_out, _ = op.forward_triton(inputs, ptx=True)
+        random.seed(self.seed)
+        torch.manual_seed(self.seed)
 
-            sample = {
-                "sample_index": sample_index,
-                "scaled_get_random_input_kwargs": scaled_kwargs,
-                "inputs": self._serialize_value(inputs),
-                "triton_output": self._serialize_value(triton_out),
-                "ptx_output": self._serialize_value(ptx_out),
-            }
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(self.seed)
 
-            if not self.check_similarity(ptx_out, triton_out):
+        for size in self.sizes:
+            for iteration in range(self.iters_per_size):
+                kwargs = self._kwargs(op, size)
+                inputs = op.get_random_input(**kwargs)
+
+                num_values = self._numel(inputs)
+                if num_values > self.MAX_VALUES:
+                    raise ValueError(
+                        f"size={size} generated {num_values} tensor values, "
+                        f"above limit {self.MAX_VALUES}"
+                    )
+
+                triton_out, _ = op.forward_triton(inputs)
+                ptx_out, _ = op.forward_triton(inputs, ptx=True)
+
+                if not self._same(ptx_out, triton_out):
+                    self.last_report = self._failure_report(
+                        size,
+                        iteration,
+                        kwargs,
+                        inputs,
+                        triton_out,
+                        ptx_out,
+                    )
+                    return False
+
                 self.last_report = {
-                    "status": "failed",
-                    "num_samples": self.num_samples,
-                    "growth_factor": self.growth_factor,
-                    "runs_per_phase": self.runs_per_phase,
-                    "last_success": last_success,
-                    "failure": sample,
+                    "status": "passed",
+                    "seed": self.seed,
+                    "size": size,
+                    "iteration": iteration,
+                    "kwargs": kwargs,
+                    "num_values": int(num_values),
                 }
-                return False
 
-            last_success = sample
-
-        self.last_report = {
-            "status": "passed",
-            "num_samples": self.num_samples,
-            "growth_factor": self.growth_factor,
-            "runs_per_phase": self.runs_per_phase,
-            "last_success": last_success,
-            "failure": None,
-        }
         return True
+
+    def verify_triton_vs_torch(self, op) -> bool:
+        random.seed(self.seed)
+        torch.manual_seed(self.seed)
+
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(self.seed)
+
+        for size in self.sizes:
+            for iteration in range(self.iters_per_size):
+                kwargs = self._kwargs(op, size)
+                inputs = op.get_random_input(**kwargs)
+
+                num_values = self._numel(inputs)
+                if num_values > self.MAX_VALUES:
+                    raise ValueError(
+                        f"size={size} generated {num_values} tensor values, "
+                        f"above limit {self.MAX_VALUES}"
+                    )
+
+                triton_out, _ = op.forward_triton(inputs)
+                torch_out = op.forward_torch(inputs)
+
+                if not self._same(triton_out, torch_out):
+                    self.last_report = self._failure_report(
+                        size,
+                        iteration,
+                        kwargs,
+                        inputs,
+                        triton_out,
+                        torch_out,
+                        expected_name="torch",
+                    )
+                    return False
+
+                self.last_report = {
+                    "status": "passed",
+                    "seed": self.seed,
+                    "size": size,
+                    "iteration": iteration,
+                    "kwargs": kwargs,
+                    "num_values": int(num_values),
+                }
+
+        return True
+
+
+def main() -> bool:
+    verifier = OutputVerifier()
+    passed = True
+
+    operator_cls = test_operator
+    op = operator_cls()
+
+    if not has_ptx_code(getattr(op, "ptx", None)):
+        return passed
+
+    ok = verifier.verify(op)
+    print(f"[{'PASSED' if ok else 'FAILED'}] {operator_cls.__name__}")
+
+    if not ok:
+        print(verifier.last_report)
+        passed = False
+
+    return passed
+
+
+if __name__ == "__main__":
+    main()

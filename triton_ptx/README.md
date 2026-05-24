@@ -58,10 +58,22 @@ Extract PTX values from Triton kernels:
 python3 -m triton_ptx.extract_ptx
 ```
 
-Compile a generated PTX kernel:
+Verify compilation process:
 
 ```bash
 python3 -m triton_ptx.sandbox.compilation
+```
+
+Verify verification process:
+
+```bash
+python3 -m triton_ptx.sandbox.verification
+```
+
+Verify evaluation process:
+
+```bash
+python3 -m triton_ptx.sandbox.evaluation
 ```
 
 Measure PTX performance:
@@ -101,10 +113,12 @@ python3 -m ruff check --fix triton_ptx
 ## Test before commit
 
 ```bash
+python3 -m ruff check --fix triton_ptx && \
 python3 -m triton_ptx.prompts.initial && \
 python3 -m triton_ptx.prompts.next && \
 python3 -m triton_ptx.extract_ptx && \
 python3 -m triton_ptx.sandbox.compilation && \
+python3 -m triton_ptx.sandbox.verification && \
 python3 -m triton_ptx.measure_ptx && \
 python3 -m triton_ptx.verify_triton_kernels && \
 python3 -m triton_ptx.verify_generated_ptx && \

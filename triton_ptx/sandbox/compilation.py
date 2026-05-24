@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 import contextlib
 import io
 
-from triton_ptx.kernels import operator_list_single
+from triton_ptx.kernels import test_operator
 
 
 class CompilationRunnerBase(ABC):
@@ -90,7 +90,7 @@ def run_ptx_compilation(kernel, ptx_code):
 
 
 if __name__ == "__main__":
-    kernel = operator_list_single[0]
+    kernel = test_operator
 
 
     invalid_ptx = run_ptx_compilation(

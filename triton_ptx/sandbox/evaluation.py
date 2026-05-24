@@ -16,7 +16,7 @@ from triton_ptx.helpers import (
     has_ptx_code,
     clear_triton_cache,
 )
-from triton_ptx.kernels import operator_list_single
+from triton_ptx.kernels import test_operator
 
 
 COLUMNS = [
@@ -228,7 +228,7 @@ class PTXBenchmarkRunner(BenchmarkRunnerBase):
 
 
 def main():
-    PTXBenchmarkRunner(operator_list_single).run()
+    PTXBenchmarkRunner([test_operator]).run()
 
 if __name__ == "__main__":
     main()

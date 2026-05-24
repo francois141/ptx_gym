@@ -47,6 +47,4 @@ operator_list = [
     SigmoidOperator,
 ]
 
-operator_list_single = [
-    AddOperator,
-]
+test_operator = AddOperator

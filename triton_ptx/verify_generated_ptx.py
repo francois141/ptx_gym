@@ -6,7 +6,7 @@ from triton_ptx.sandbox import OutputVerifier
 
 def test_kernel(kernel, num_runs: int) -> bool:
     kernel_name = type(kernel).__name__
-    verifier = OutputVerifier(num_samples=200)
+    verifier = OutputVerifier()
 
     if not has_ptx_code(getattr(kernel, "ptx", None)):
         return True
