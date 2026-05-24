@@ -1,7 +1,7 @@
-from pathlib import Path
 from openai import OpenAI
 
 from triton_ptx.generator import ResponseGenerator, parse_response_text
+
 
 class OpenAIPrompt(ResponseGenerator):
     DEFAULT_MODEL = "gpt-5"
@@ -55,28 +55,21 @@ class OpenAIPrompt(ResponseGenerator):
     def __init__(
         self,
         model=None,
-        api_key_path="openai_api_key.txt",
         reasoning_effort=None,
     ):
         self.model = model or self.DEFAULT_MODEL
-        self.api_key_path = Path(api_key_path)
 
         if reasoning_effort not in self.ALLOWED_REASONING_EFFORTS:
-            allowed = sorted(v for v in self.ALLOWED_REASONING_EFFORTS if v is not None)
+            allowed = sorted(
+                v for v in self.ALLOWED_REASONING_EFFORTS if v is not None
+            )
             raise ValueError(
                 f"Invalid reasoning_effort. Expected one of {allowed} or None."
             )
 
         self.reasoning_effort = reasoning_effort
-        self.client = OpenAI(api_key=self._read_api_key())
 
-    def _read_api_key(self):
-        api_key = self.api_key_path.read_text(encoding="utf-8").strip()
-
-        if not api_key:
-            raise ValueError("OpenAI API key file is empty.")
-
-        return api_key
+        self.client = OpenAI()
 
     def _estimate_cost(self, response):
         pricing = self.PRICING_PER_1M_TOKENS.get(self.model)
@@ -92,9 +85,13 @@ class OpenAIPrompt(ResponseGenerator):
         cached_input_tokens = 0
 
         if prompt_details is not None:
-            cached_input_tokens = getattr(prompt_details, "cached_tokens", 0) or 0
+            cached_input_tokens = (
+                getattr(prompt_details, "cached_tokens", 0) or 0
+            )
 
-        uncached_input_tokens = max(input_tokens - cached_input_tokens, 0)
+        uncached_input_tokens = max(
+            input_tokens - cached_input_tokens, 0
+        )
 
         return (
             uncached_input_tokens * pricing["input"]
@@ -103,10 +100,14 @@ class OpenAIPrompt(ResponseGenerator):
         ) / 1_000_000
 
     def generate_response(self, prompt, *, num_answers=None):
-        requested = int(num_answers) if num_answers is not None else 1
+        requested = (
+            int(num_answers) if num_answers is not None else 1
+        )
 
         if requested <= 0:
-            raise ValueError("num_answers must be positive when provided.")
+            raise ValueError(
+                "num_answers must be positive when provided."
+            )
 
         prompt = (
             f"{prompt}\n\n"
@@ -122,9 +123,13 @@ class OpenAIPrompt(ResponseGenerator):
         }
 
         if self.reasoning_effort is not None:
-            request_kwargs["reasoning_effort"] = self.reasoning_effort
+            request_kwargs["reasoning_effort"] = (
+                self.reasoning_effort
+            )
 
-        response = self.client.chat.completions.create(**request_kwargs)
+        response = self.client.chat.completions.create(
+            **request_kwargs
+        )
 
         all_answers = []
 
@@ -134,7 +139,8 @@ class OpenAIPrompt(ResponseGenerator):
 
             if len(parsed) != 1:
                 raise ValueError(
-                    f"Expected exactly one answer per completion, got {len(parsed)}."
+                    "Expected exactly one answer per completion, "
+                    f"got {len(parsed)}."
                 )
 
             all_answers.extend(parsed)
@@ -142,8 +148,13 @@ class OpenAIPrompt(ResponseGenerator):
         cost = self._estimate_cost(response)
 
         if cost is None:
-            print(f"Estimated query cost: unavailable for model {self.model!r}")
+            print(
+                f"Estimated query cost: unavailable for "
+                f"model {self.model!r}"
+            )
         else:
-            print(f"Estimated total query cost: ${cost:.6f}")
+            print(
+                f"Estimated total query cost: ${cost:.6f}"
+            )
 
         return all_answers
