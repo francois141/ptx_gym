@@ -1,13 +1,12 @@
 from pathlib import Path
-
 from openai import OpenAI
 
 from triton_ptx.generator import ResponseGenerator, parse_response_text
 
-
 class OpenAIPrompt(ResponseGenerator):
     DEFAULT_MODEL = "gpt-5"
     ALLOWED_REASONING_EFFORTS = {None, "minimal", "low", "medium", "high"}
+
     PRICING_PER_1M_TOKENS = {
         # Price estimates in USD per 1M tokens.
         # Keep these aligned with https://platform.openai.com/pricing.
@@ -61,11 +60,13 @@ class OpenAIPrompt(ResponseGenerator):
     ):
         self.model = model or self.DEFAULT_MODEL
         self.api_key_path = Path(api_key_path)
+
         if reasoning_effort not in self.ALLOWED_REASONING_EFFORTS:
+            allowed = sorted(v for v in self.ALLOWED_REASONING_EFFORTS if v is not None)
             raise ValueError(
-                "Invalid reasoning_effort. Expected one of: "
-                f"{sorted(v for v in self.ALLOWED_REASONING_EFFORTS if v is not None)} or None."
+                f"Invalid reasoning_effort. Expected one of {allowed} or None."
             )
+
         self.reasoning_effort = reasoning_effort
         self.client = OpenAI(api_key=self._read_api_key())
 
@@ -73,50 +74,76 @@ class OpenAIPrompt(ResponseGenerator):
         api_key = self.api_key_path.read_text(encoding="utf-8").strip()
 
         if not api_key:
-            raise ValueError("OpenAI API key file is empty")
+            raise ValueError("OpenAI API key file is empty.")
 
         return api_key
 
     def _estimate_cost(self, response):
         pricing = self.PRICING_PER_1M_TOKENS.get(self.model)
+        usage = getattr(response, "usage", None)
 
-        if pricing is None:
+        if pricing is None or usage is None:
             return None
 
-        usage = response.usage
+        input_tokens = getattr(usage, "prompt_tokens", 0) or 0
+        output_tokens = getattr(usage, "completion_tokens", 0) or 0
 
-        input_tokens = getattr(usage, "input_tokens", 0) or 0
-        output_tokens = getattr(usage, "output_tokens", 0) or 0
-
-        input_details = getattr(usage, "input_tokens_details", None)
+        prompt_details = getattr(usage, "prompt_tokens_details", None)
         cached_input_tokens = 0
-        if input_details is not None:
-            cached_input_tokens = getattr(input_details, "cached_tokens", 0) or 0
+
+        if prompt_details is not None:
+            cached_input_tokens = getattr(prompt_details, "cached_tokens", 0) or 0
 
         uncached_input_tokens = max(input_tokens - cached_input_tokens, 0)
 
-        cost = (
+        return (
             uncached_input_tokens * pricing["input"]
             + cached_input_tokens * pricing["cached_input"]
             + output_tokens * pricing["output"]
         ) / 1_000_000
 
-        return cost
+    def generate_response(self, prompt, *, num_answers=None):
+        requested = int(num_answers) if num_answers is not None else 1
 
-    def generate_response(self, prompt):
+        if requested <= 0:
+            raise ValueError("num_answers must be positive when provided.")
+
+        prompt = (
+            f"{prompt}\n\n"
+            "Generate exactly one answer dictionary as `ptx_kernel`."
+        )
+
         request_kwargs = {
             "model": self.model,
-            "input": prompt,
+            "messages": [
+                {"role": "user", "content": prompt},
+            ],
+            "n": requested,
         }
-        if self.reasoning_effort is not None:
-            request_kwargs["reasoning"] = {"effort": self.reasoning_effort}
 
-        response = self.client.responses.create(**request_kwargs)
+        if self.reasoning_effort is not None:
+            request_kwargs["reasoning_effort"] = self.reasoning_effort
+
+        response = self.client.chat.completions.create(**request_kwargs)
+
+        all_answers = []
+
+        for choice in response.choices:
+            text = choice.message.content or ""
+            parsed = parse_response_text(text)
+
+            if len(parsed) != 1:
+                raise ValueError(
+                    f"Expected exactly one answer per completion, got {len(parsed)}."
+                )
+
+            all_answers.extend(parsed)
 
         cost = self._estimate_cost(response)
-        if cost is not None:
-            print(f"Estimated query cost: ${cost:.6f}")
-        else:
-            print(f"Estimated query cost: unavailable for model {self.model!r}")
 
-        return parse_response_text(response.output_text)
+        if cost is None:
+            print(f"Estimated query cost: unavailable for model {self.model!r}")
+        else:
+            print(f"Estimated total query cost: ${cost:.6f}")
+
+        return all_answers

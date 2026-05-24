@@ -128,6 +128,7 @@ def signature_template(parameters, *, version, target, address_size, kernel_name
 ## PTX Entry Template
 
 Use this exact entry template shape and fill the body with your PTX:
+- Any argument name containing `_ptr` should be treated as a pointer to float32 data.
 
 ```ptx
 .version {version}
@@ -158,29 +159,31 @@ def correctness_rules():
 
 
 def performance_rules(target, version):
-    return f"""
+    return """
 ## Performance Rules
 
-Optimize the PTX for runtime speed on {target} using PTX ISA version {version}.
-Use target-specific instructions aggressively when they are semantically valid
-for this kernel and supported by the requested PTX version/target.
+Optimize for the specific Triton kernel shown below. Use only optimizations that are semantically valid for this kernel.
 
-Priority order:
+For elementwise kernels:
+1. Use coalesced global loads and stores.
+2. Use predicated memory operations for masks.
+3. Use one or more elements per thread when beneficial.
+4. Use vectorized loads/stores only when alignment and masking semantics are safe.
+5. Use approximate fp32 math instructions only if they satisfy the requested tolerance.
+6. Keep temporary values in registers.
+7. Fold tl.constexpr values into immediates.
+8. Prefer efficient address arithmetic such as mad.wide, shl, and add.
+9. Avoid shared memory, barriers, atomics, tensor cores, async copies, and local memory unless the Triton kernel structure clearly benefits from them.
 
-1. Use coalesced global memory accesses whenever the Triton indexing permits it.
-2. Use vectorized loads and stores when they are safe, aligned, and preserve masking semantics.
-3. Use async global-to-shared copies, prefetching, double buffering, and barriers when they reduce latency for the kernel.
-4. Use tensor core instructions such as mma/wgmma when the Triton computation is a matrix/tensor contraction with compatible data types and tile shapes.
-5. Use predicated PTX instructions for masks and boundary checks where possible.
-6. Avoid divergent branches unless they are clearly cheaper than predication.
-7. Keep temporary values in registers.
-8. Avoid local memory, stack usage, and register spills where possible.
-9. Hoist invariant arithmetic out of repeated computations.
-10. Fold tl.constexpr values into immediates.
-11. Prefer efficient address arithmetic such as mad, mad.lo, mad.wide, shl, and add over slower sequences.
-12. Replace division or modulo by powers of two with shifts and masks when valid.
-13. Avoid redundant conversions, redundant loads, and redundant stores.
-14. Do not add debugging code, asserts, printf, comments, or unused computations, except for the required dummy parameters.
+For reduction kernels:
+1. Use coalesced global loads.
+2. Use warp-level reductions when beneficial.
+3. Use shared memory only when needed for cross-warp reduction.
+4. Prefer one global atomic per CTA when the Triton kernel uses an atomic accumulation.
+
+For matrix/tensor contraction kernels:
+1. Use mma/wgmma/tensor-core instructions when the shapes and data types are compatible.
+2. Use tiling, shared memory, async copies, and double buffering when beneficial.
 """.strip()
 
 
@@ -194,35 +197,26 @@ def triton_kernel_block(source):
 
 
 def output_contract(num_answers: int = 5):
-    answers_template = ",\n".join(
-        """        {
-            "ptx": \"\"\"<valid PTX code>\"\"\",
-            "<constexpr_name>": <chosen_constexpr_value>,
-        }"""
-        for _ in range(num_answers)
-    )
-
-    return f"""
+    return """
 ## Output Contract
 
-Return only a Python snippet that defines a dictionary named `ptx_kernel` containing {num_answers} answers.
+Return only a Python snippet that defines one answer dictionary named `ptx_kernel`.
 
 The output must be:
 
 - assign exactly one top-level variable named `ptx_kernel`;
 - use this shape:
 
-ptx_kernel = {{
-    "answers": [
-{answers_template}
-    ],
-}}
+ptx_kernel = {
+    "ptx": \"\"\"<valid PTX code>\"\"\",
+    "<constexpr_name>": <chosen_constexpr_value>,
+}
 
-- generate exactly {num_answers} answers;
-- put the PTX code directly under the top-level `"ptx"` key in each answer;
-- for each tl.constexpr parameter, choose the appropriate compile-time value and put it directly in each answer dictionary using the constexpr parameter name as the key;
+- generate exactly one answer;
+- put the PTX code directly under the top-level `"ptx"` key;
+- for each tl.constexpr parameter, choose the appropriate compile-time value and put it directly in the dictionary using the constexpr parameter name as the key;
 - use only Python literal values for constexpr dictionary values;
-- make each PTX string valid PTX;
+- make the PTX string valid PTX;
 - ASCII-only;
 - free of markdown fences;
 - free of comments;

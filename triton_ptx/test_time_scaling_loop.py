@@ -48,8 +48,7 @@ def run_test_time_scaling_loop(
 
     for round_index in range(1, rounds + 1):
         print(f"=== Iteration {round_index} ===")
-        payload = prompter.generate_response(current_prompt)
-        answers = payload["answers"]
+        answers = prompter.generate_response(current_prompt, num_answers=k)
 
         round_results = [
             evaluator.evaluate(
@@ -95,7 +94,7 @@ def parse_args() -> argparse.Namespace:
         description="Run a manual per-operator PTX test-time scaling loop."
     )
     parser.add_argument("operator", help="Operator class name, for example AddOperator.")
-    parser.add_argument("--rounds", type=int, default=4, help="Number of test-time scaling rounds.")
+    parser.add_argument("--rounds", type=int, default=10, help="Number of test-time scaling rounds.")
     parser.add_argument("--k", type=int, default=2, help="Sample size for best-of-k candidate selection.")
     parser.add_argument(
         "--output-dir",
