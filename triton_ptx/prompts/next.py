@@ -43,20 +43,9 @@ def _format_constexprs(candidate: EvaluatedCandidate) -> str:
 
 def _candidate_block(candidate: EvaluatedCandidate) -> str:
     ptx_code = str(candidate.payload.get("ptx", "")).strip() or "<missing PTX payload>"
-
-    return f"""
-## Candidate r{candidate.round_index}c{candidate.index}
-
-- Compiles: {"yes" if candidate.compiles else "no"}
-- Correct: {"yes" if candidate.correct else "no"}
-- Passed: {"yes" if candidate.passed else "no"}
-- Message: {candidate.message.strip() or "None"}
-- p20: {_format_metric(candidate.p20)}
-- p50: {_format_metric(candidate.p50)}
-- p80: {_format_metric(candidate.p80)}
-
-Chosen constexpr values:
-{_format_constexprs(candidate)}
+    diagnostics_block = ""
+    if not candidate.correct:
+        diagnostics_block = f"""
 
 Compiler stdout:
 ```text
@@ -72,6 +61,22 @@ Timing error:
 ```text
 {candidate.timing_error.strip() or "None"}
 ```
+"""
+
+    return f"""
+## Candidate r{candidate.round_index}c{candidate.index}
+
+- Compiles: {"yes" if candidate.compiles else "no"}
+- Correct: {"yes" if candidate.correct else "no"}
+- Passed: {"yes" if candidate.passed else "no"}
+- Message: {candidate.message.strip() or "None"}
+- p20: {_format_metric(candidate.p20)}
+- p50: {_format_metric(candidate.p50)}
+- p80: {_format_metric(candidate.p80)}
+
+Chosen constexpr values:
+{_format_constexprs(candidate)}
+{diagnostics_block}
 
 PTX:
 ```ptx
