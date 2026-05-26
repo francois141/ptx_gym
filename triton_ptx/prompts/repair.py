@@ -1,0 +1,95 @@
+from __future__ import annotations
+
+
+from triton_ptx.evaluation import EvaluatedCandidate
+from triton_ptx.helpers import extract_specification_from_operator
+from triton_ptx.prompts.blocks import (
+    correctness_rules,
+    extracted_signature_information,
+    output_contract,
+    ptx_header,
+    signature_template,
+    triton_kernel_block,
+)
+from triton_ptx.prompts.next import candidate_results_block
+
+
+def repair_task(retry_index: int, max_retries: int) -> str:
+    return f"""
+# PTX Isolated Candidate Repair
+
+You are given one failed PTX candidate for a Triton kernel.
+Repair only this candidate and return one replacement answer.
+
+This is repair attempt {retry_index} of {max_retries}. Focus on the concrete
+compiler and verification feedback below. Do not blend in other candidates or
+produce multiple alternatives.
+""".strip()
+
+
+def repair_rules() -> str:
+    return """
+## Repair Rules
+
+- Fix the smallest part of the PTX needed to address the reported compilation or verification failure.
+- Preserve the exact PTX header, kernel entry name, runtime argument order, and constexpr dictionary keys.
+- If compilation failed, prioritize valid PTX syntax, declarations, parameter loads, address spaces, and instruction types.
+- If correctness verification failed, prioritize matching the Triton semantics, masks, indexing, and stores exactly.
+- Return one complete replacement candidate, not a patch or explanation.
+""".strip()
+
+
+def prompt_builder(
+    spec,
+    failed_candidate: EvaluatedCandidate,
+    *,
+    retry_index: int,
+    max_retries: int,
+    version: str = "8.7",
+    target: str = "sm_89",
+    address_size: int = 64,
+) -> str:
+    sections = [
+        repair_task(retry_index, max_retries),
+        ptx_header().format(
+            version=version,
+            target=target,
+            address_size=address_size,
+        ).strip(),
+        extracted_signature_information(spec.parameters),
+        signature_template(
+            spec.parameters,
+            version=version,
+            target=target,
+            address_size=address_size,
+            kernel_name=spec.kernel_name,
+        ),
+        correctness_rules(),
+        triton_kernel_block(spec.source),
+        candidate_results_block([failed_candidate]),
+        repair_rules(),
+        output_contract(),
+    ]
+    return "\n\n".join(sections)
+
+
+def build_repair_prompt_for_operator(
+    failed_candidate: EvaluatedCandidate,
+    operator_cls: type,
+    *,
+    retry_index: int,
+    max_retries: int,
+    version: str = "8.7",
+    target: str = "sm_89",
+    address_size: int = 64,
+) -> str:
+    spec = extract_specification_from_operator(operator_cls)
+    return prompt_builder(
+        spec,
+        failed_candidate,
+        retry_index=retry_index,
+        max_retries=max_retries,
+        version=version,
+        target=target,
+        address_size=address_size,
+    )

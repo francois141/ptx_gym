@@ -29,7 +29,7 @@ def format_argument_list(parameters):
 
 
 def initial_task():
-    return f"""
+    return """
 # Triton to Fastest PTX Conversion
 
 You are given a Triton kernel. Generate a compile-ready PTX kernels.
@@ -39,7 +39,7 @@ PTX version and target listed below.
 
 
 def follow_up_task():
-    return f"""
+    return """
 # PTX Test-Time Scaling
 
 You are given candidate PTX answers for the same Triton kernel, along with

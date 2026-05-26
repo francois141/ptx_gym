@@ -12,6 +12,23 @@ from triton_ptx.helpers import get_ptx_system_config
 from triton_ptx.kernels import resolve_kernel
 from triton_ptx.prompts import build_prompt_for_operator
 from triton_ptx.prompts import build_follow_up_prompt_for_operator
+from triton_ptx.prompts import build_repair_prompt_for_operator
+
+
+def needs_compile_or_verification_retry(candidate) -> bool:
+    if not candidate.compiles:
+        return True
+
+    message = (candidate.message or "").lower()
+    return (
+        candidate.compiles
+        and not candidate.correct
+        and (
+            "correctness check" in message
+            or "verification" in message
+            or "verifier" in message
+        )
+    )
 
 
 def run_test_time_scaling_loop(
@@ -19,6 +36,7 @@ def run_test_time_scaling_loop(
     *,
     rounds: int = 10,
     k: int = 3,
+    max_retries: int = 3,
     output_root: Path,
 ) -> Path:
 
@@ -50,17 +68,64 @@ def run_test_time_scaling_loop(
         print(f"=== Iteration {round_index} ===")
         answers = prompter.generate_response(current_prompt, num_answers=k)
 
-        round_results = [
-            evaluator.evaluate(
+        round_results = []
+        repair_results = []
+
+        for index, answer in enumerate(answers, start=1):
+            result = evaluator.evaluate(
                 answer,
                 round_index=round_index,
                 candidate_index=index,
             )
-            for index, answer in enumerate(answers, start=1)
-        ]  
+            original_result = result
+
+            retry_index = 1
+            while not needs_compile_or_verification_retry(result) and retry_index <= max_retries:
+
+                if retry_index == 1:
+                    repair_results.append(original_result)
+
+                repair_prompt = build_repair_prompt_for_operator(
+                    result,
+                    kernel_cls,
+                    retry_index=retry_index,
+                    max_retries=max_retries,
+                )
+
+                repair_prompt_name = (
+                    f"repair_prompt_iteration_{round_index}"
+                    f"_candidate_{index}_retry_{retry_index}.md"
+                )
+                (output_root / repair_prompt_name).write_text(
+                    repair_prompt + "\n",
+                    encoding="utf-8",
+                )
+                (run_archive_root / repair_prompt_name).write_text(
+                    repair_prompt + "\n",
+                    encoding="utf-8",
+                )
+
+                repaired_answer = prompter.generate_response(
+                    repair_prompt,
+                    num_answers=1,
+                )[0]
+                
+                result = evaluator.evaluate(
+                    repaired_answer,
+                    round_index=round_index,
+                    candidate_index=index,
+                )
+                repair_results.append(result)
+                retry_index += 1
+
+            round_results.append(result)
 
         output_writer.store(round_index, round_results)
         archive_writer.store(round_index, round_results)
+
+        if repair_results:
+            output_writer.store(f"repairs_{round_index}", repair_results)
+            archive_writer.store(f"repairs_{round_index}", repair_results)
 
         # Keep the best k only
         current_candidates += round_results
@@ -97,6 +162,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rounds", type=int, default=10, help="Number of test-time scaling rounds.")
     parser.add_argument("--k", type=int, default=2, help="Sample size for best-of-k candidate selection.")
     parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=3,
+        help="Maximum isolated repair attempts per failed candidate.",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default="output",
@@ -122,11 +193,14 @@ def main() -> None:
         raise ValueError("--rounds must be positive")
     if args.k <= 0:
         raise ValueError("--k must be positive")
+    if args.max_retries < 0:
+        raise ValueError("--max-retries must be non-negative")
 
     run_test_time_scaling_loop(
         args.kernel,
         rounds=args.rounds,
         k=args.k,
+        max_retries=args.max_retries,
         output_root=args.output_dir,
     )
 
