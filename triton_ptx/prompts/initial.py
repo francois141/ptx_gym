@@ -29,7 +29,7 @@ def prompt_builder(
     num_answers=5,
 ):
     sections = [
-        initial_task(num_answers=num_answers).strip(),
+        initial_task().strip(),
         ptx_header().format(
             version=version,
             target=target,
@@ -46,7 +46,7 @@ def prompt_builder(
         correctness_rules(),
         performance_rules(target, version),
         triton_kernel_block(spec.source),
-        output_contract(num_answers=num_answers),
+        output_contract(),
     ]
     return "\n\n".join(sections)
 

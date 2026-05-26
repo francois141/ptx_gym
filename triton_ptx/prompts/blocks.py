@@ -28,17 +28,17 @@ def format_argument_list(parameters):
     return "\n".join(lines)
 
 
-def initial_task(num_answers: int = 5):
+def initial_task():
     return f"""
 # Triton to Fastest PTX Conversion
 
-You are given a Triton kernel. Generate {num_answers} distinct equivalent, compile-ready PTX kernels.
+You are given a Triton kernel. Generate a compile-ready PTX kernels.
 The kernel must be the fastest implementation you can produce for the exact
 PTX version and target listed below.
     """
 
 
-def follow_up_task(num_answers: int = 5):
+def follow_up_task():
     return f"""
 # PTX Test-Time Scaling
 
@@ -46,7 +46,7 @@ You are given candidate PTX answers for the same Triton kernel, along with
 evaluation results that show whether each candidate compiled, whether it was
 correct, and how fast it ran.
 
-Use that feedback to generate {num_answers} distinct improved PTX kernels. Each answer
+Use that feedback to generate another improved PTX kernels. Each answer
 must be compile-ready, run without cuda illegal accesses, semantically equivalent to the Triton kernel, and
 target the exact PTX version and GPU target listed below. Also you need to chosse with value you set to the constexpr values.
     """
@@ -196,7 +196,7 @@ def triton_kernel_block(source):
     )
 
 
-def output_contract(num_answers: int = 5):
+def output_contract():
     return """
 ## Output Contract
 

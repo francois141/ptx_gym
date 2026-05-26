@@ -120,7 +120,7 @@ def prompt_builder(
     num_answers: int = 5,
 ) -> str:
     sections = [
-        follow_up_task(num_answers=num_answers).strip(),
+        follow_up_task().strip(),
         ptx_header().format(
             version=version,
             target=target,
@@ -139,7 +139,7 @@ def prompt_builder(
         triton_kernel_block(spec.source),
         candidate_results_block(candidates),
         follow_up_rules(),
-        output_contract(num_answers=num_answers),
+        output_contract(),
     ]
     return "\n\n".join(sections)
 
