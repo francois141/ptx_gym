@@ -12,11 +12,11 @@ import torch
 import matplotlib.pyplot as plt
 
 from triton_ptx.helpers import (
-    check_similarity,
     has_ptx_code,
     clear_triton_cache,
 )
 from triton_ptx.kernels import test_kernel
+from triton_ptx.sandbox.verification import OutputVerifier
 
 
 COLUMNS = [
@@ -65,7 +65,7 @@ class BenchmarkRunnerBase(ABC):
 
             inputs = op.get_random_input()
 
-            if not self.verify_outputs(op, inputs):
+            if not self.verify_outputs(op):
                 print(f"Result: {name} FAILED (Correctness check failed)")
                 self.rows.append(self.empty_row(name, "FAILED"))
                 return
@@ -86,17 +86,8 @@ class BenchmarkRunnerBase(ABC):
     def evaluate(self, op, inputs) -> dict[str, Any]:
         pass
 
-    def verify_outputs(self, op, inputs) -> bool:
-        torch_output = op.forward_torch(inputs)
-        triton_output, _ = op.forward_triton(inputs)
-        if not check_similarity(torch_output, triton_output):
-            return False
-
-        if has_ptx_code(getattr(op, "ptx", None)):
-            ptx_output, _ = op.forward_triton(inputs, ptx=True)
-            return check_similarity(torch_output, ptx_output)
-
-        return True
+    def verify_outputs(self, op) -> bool:
+        return OutputVerifier().verify(op)
 
     def benchmark(self, fn, quantiles=(0.2, 0.5, 0.8)) -> Timing:
         p20, p50, p80 = triton.testing.do_bench(
