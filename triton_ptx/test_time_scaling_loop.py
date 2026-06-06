@@ -80,7 +80,7 @@ def run_test_time_scaling_loop(
             original_result = result
 
             retry_index = 1
-            while not needs_compile_or_verification_retry(result) and retry_index <= max_retries:
+            while needs_compile_or_verification_retry(result) and retry_index <= max_retries:
 
                 if retry_index == 1:
                     repair_results.append(original_result)
