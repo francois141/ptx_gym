@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 import ast
 import json
-from pathlib import Path
 
 
 class ResponseGenerator(ABC):
@@ -54,18 +53,3 @@ def parse_response_text(text: str) -> list[dict]:
             raise ValueError(f"Answer #{index} is not a dictionary.")
 
     return obj
-
-
-class ManualPrompt(ResponseGenerator):
-
-    def generate_response(self, prompt: str, *, num_answers: int | None = None) -> list[dict]:
-        file_path = Path("input.json")
-
-        input("Write anything when you are done copying the answer in input.json")
-
-        try:
-            text = file_path.read_text(encoding="utf-8")
-            text = text.strip()
-            return parse_response_text(text)
-        except FileNotFoundError:
-            raise ValueError(f"File not found: {file_path}")

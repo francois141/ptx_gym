@@ -114,40 +114,52 @@ class OpenAIPrompt(ResponseGenerator):
             "Generate exactly one answer dictionary as `ptx_kernel`."
         )
 
-        request_kwargs = {
-            "model": self.model,
-            "messages": [
-                {"role": "user", "content": prompt},
-            ],
-            "n": requested,
-        }
-
-        if self.reasoning_effort is not None:
-            request_kwargs["reasoning_effort"] = (
-                self.reasoning_effort
-            )
-
-        response = self.client.chat.completions.create(
-            **request_kwargs
-        )
-
         all_answers = []
+        total_cost = 0.0
+        cost_available = True
 
-        for choice in response.choices:
-            text = choice.message.content or ""
-            parsed = parse_response_text(text)
+        while len(all_answers) < requested:
+            remaining = requested - len(all_answers)
 
-            if len(parsed) != 1:
-                raise ValueError(
-                    "Expected exactly one answer per completion, "
-                    f"got {len(parsed)}."
-                )
+            request_kwargs = {
+                "model": self.model,
+                "messages": [
+                    {"role": "user", "content": prompt},
+                ],
+                "n": remaining,
+            }
 
-            all_answers.extend(parsed)
+            if self.reasoning_effort is not None:
+                request_kwargs["reasoning_effort"] = self.reasoning_effort
 
-        cost = self._estimate_cost(response)
+            response = self.client.chat.completions.create(**request_kwargs)
 
-        if cost is None:
+            cost = self._estimate_cost(response)
+            if cost is None:
+                cost_available = False
+            else:
+                total_cost += cost
+
+            for choice in response.choices:
+                text = choice.message.content or ""
+
+                try:
+                    parsed = parse_response_text(text)
+
+                    if len(parsed) != 1:
+                        raise ValueError(
+                            "Expected exactly one answer per completion, "
+                            f"got {len(parsed)}."
+                        )
+
+                    all_answers.extend(parsed)
+
+                except Exception:
+                    # Bad JSON / malformed response. Ignore this one;
+                    # the while loop will re-query the missing answer.
+                    pass
+
+        if not cost_available:
             print(
                 f"Estimated query cost: unavailable for "
                 f"model {self.model!r}"
