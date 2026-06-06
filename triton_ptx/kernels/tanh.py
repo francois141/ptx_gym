@@ -1,6 +1,7 @@
 import torch
 import triton
 import triton.language as tl
+from triton.language.extra import libdevice
 
 from triton_ptx.kernels.base import TritonPTXKernel
 
@@ -10,9 +11,7 @@ _ptx_kernel = {
 }
 
 
-
-
-class SigmoidKernel(TritonPTXKernel):
+class TanhKernel(TritonPTXKernel):
     def __init__(self, block_size=1024, ptx=_ptx_kernel):
         self.block_size = block_size
         self.init_compiled_kernels(ptx=ptx)
@@ -23,7 +22,7 @@ class SigmoidKernel(TritonPTXKernel):
         offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
         mask = offsets < n_elements
         x = tl.load(x_ptr + offsets, mask=mask)
-        output = 1.0 / (1.0 + tl.exp(-x.to(tl.float32)))
+        output = libdevice.tanh(x.to(tl.float32))
         tl.store(output_ptr + offsets, output.to(output_ptr.dtype.element_ty), mask=mask)
 
     def get_random_input(self, size=10_000_000):
@@ -49,4 +48,4 @@ class SigmoidKernel(TritonPTXKernel):
         return output, kernel
 
     def forward_torch(self, inputs):
-        return torch.sigmoid(inputs)
+        return torch.tanh(inputs)

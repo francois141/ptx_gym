@@ -2,7 +2,7 @@ import torch
 import triton
 import triton.language as tl
 
-from triton_ptx.helpers import get_ptx_constexpr, jit_fixed_parameters
+from triton_ptx.helpers import jit_fixed_parameters
 from triton_ptx.kernels.base import TritonPTXKernel
 
 _ptx_kernel = {
@@ -39,31 +39,30 @@ class FancyFusedKernel(TritonPTXKernel):
         result = e_c_x * sig_x2
         tl.store(output_ptr + offsets, result, mask=mask)
 
-    def get_random_input(self, size=100_000):
-        return torch.randn(size, device="cuda")
+    def get_random_input(self, size=10_000_000):
+        return self._rand_1d(size)
 
     def forward_triton(self, inputs, ptx=False):
-        x = inputs
-        n_elements = x.numel()
-        output = torch.empty_like(x)
+        n_elements = inputs.numel()
+        output = torch.empty_like(inputs)
         grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
         if not ptx:
             kernel = self.compiled_kernel[grid](
-                x, output, n_elements, BLOCK_SIZE=self.block_size,
+                inputs, output, n_elements, BLOCK_SIZE=self.block_size,
             )
         else:
             kernel = self.require_compiled_ptx()[grid](
-                x,
+                inputs,
                 output,
                 n_elements,
-                BLOCK_SIZE=(get_ptx_constexpr(self.ptx, "BLOCK_SIZE") or self.block_size),
+                BLOCK_SIZE=self.ptx["BLOCK_SIZE"],
+                num_warps=self.ptx["num_warps"],
             )
         return output, kernel
 
     def forward_torch(self, inputs):
-        x = inputs
-        inner = torch.relu(torch.sin(x))
+        inner = torch.relu(torch.sin(inputs))
         left = torch.exp(torch.cos(inner))
-        right = torch.sigmoid(x**2)
+        right = torch.sigmoid(inputs**2)
         return left * right

@@ -4,6 +4,7 @@ import math
 import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any
 
 
@@ -11,6 +12,36 @@ import json
 
 from triton_ptx.helpers import clear_triton_cache
 from triton_ptx.sandbox import PTXBenchmarkRunner, run_ptx_compilation, OutputVerifier
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key if isinstance(key, (str, int, float, bool)) or key is None else str(key): _json_safe(item)
+            for key, item in value.items()
+        }
+
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+
+    if isinstance(value, Path):
+        return str(value)
+
+    if hasattr(value, "detach") and hasattr(value, "cpu") and hasattr(value, "tolist"):
+        return _json_safe(value.detach().cpu().tolist())
+
+    if hasattr(value, "item") and callable(value.item):
+        try:
+            return _json_safe(value.item())
+        except (TypeError, ValueError):
+            pass
+
+    try:
+        json.dumps(value)
+        return value
+    except TypeError:
+        return str(value)
+
 
 def benchmark_operator(operator):
     """
@@ -111,7 +142,7 @@ class EvaluatedCandidate:
 
     def to_json(self, indent: int = 2) -> str:
         return json.dumps(
-            self.to_dict(),
+            _json_safe(self.to_dict()),
             indent=indent,
             ensure_ascii=False,
         )

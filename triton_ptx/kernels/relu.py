@@ -2,7 +2,6 @@ import torch
 import triton
 import triton.language as tl
 
-from triton_ptx.helpers import get_ptx_constexpr
 from triton_ptx.kernels.base import TritonPTXKernel
 
 _ptx_kernel = {
@@ -104,10 +103,8 @@ L_done:
 }
 """,
     "BLOCK_SIZE": 256,
+    "num_warps": 4,
 }
-
-
-
 
 class ReLUKernel(TritonPTXKernel):
     def __init__(self, block_size=1024, ptx=_ptx_kernel):
@@ -123,7 +120,7 @@ class ReLUKernel(TritonPTXKernel):
         tl.store(output_ptr + offsets, tl.maximum(x, 0.0), mask=mask)
 
     def get_random_input(self, size=10_000_000):
-        return torch.randn(size, device="cuda", dtype=torch.float32)
+        return self._rand_1d(size)
 
     def forward_triton(self, x, ptx=False):
         output = torch.empty_like(x)
@@ -137,7 +134,8 @@ class ReLUKernel(TritonPTXKernel):
                 x,
                 output,
                 n_elements,
-                BLOCK_SIZE=(get_ptx_constexpr(self.ptx, "BLOCK_SIZE") or self.block_size),
+                BLOCK_SIZE=self.ptx["BLOCK_SIZE"],
+                num_warps=self.ptx["num_warps"],
             )
         return output, kernel
 

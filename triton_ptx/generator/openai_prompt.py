@@ -55,7 +55,7 @@ class OpenAIPrompt(ResponseGenerator):
     def __init__(
         self,
         model=None,
-        reasoning_effort=None,
+        reasoning_effort="medium",
     ):
         self.model = model or self.DEFAULT_MODEL
 

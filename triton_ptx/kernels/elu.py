@@ -10,20 +10,20 @@ _ptx_kernel = {
 }
 
 
-
-
-class SigmoidKernel(TritonPTXKernel):
-    def __init__(self, block_size=1024, ptx=_ptx_kernel):
+class ELUKernel(TritonPTXKernel):
+    def __init__(self, alpha=1.0, block_size=1024, ptx=_ptx_kernel):
+        self.alpha = alpha
         self.block_size = block_size
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
-    def kernel(x_ptr, output_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
+    def kernel(x_ptr, output_ptr, n_elements, alpha, BLOCK_SIZE: tl.constexpr):
         pid = tl.program_id(axis=0)
         offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
         mask = offsets < n_elements
         x = tl.load(x_ptr + offsets, mask=mask)
-        output = 1.0 / (1.0 + tl.exp(-x.to(tl.float32)))
+        x32 = x.to(tl.float32)
+        output = tl.where(x32 > 0, x32, alpha * (tl.exp(x32) - 1.0))
         tl.store(output_ptr + offsets, output.to(output_ptr.dtype.element_ty), mask=mask)
 
     def get_random_input(self, size=10_000_000):
@@ -36,17 +36,18 @@ class SigmoidKernel(TritonPTXKernel):
 
         if not ptx:
             kernel = self.compiled_kernel[grid](
-                inputs, output, n_elements, BLOCK_SIZE=self.block_size,
+                inputs, output, n_elements, self.alpha, BLOCK_SIZE=self.block_size,
             )
         else:
             kernel = self.require_compiled_ptx()[grid](
                 inputs,
                 output,
                 n_elements,
+                self.alpha,
                 BLOCK_SIZE=self.ptx["BLOCK_SIZE"],
                 num_warps=self.ptx["num_warps"],
             )
         return output, kernel
 
     def forward_torch(self, inputs):
-        return torch.sigmoid(inputs)
+        return torch.nn.functional.elu(inputs, alpha=self.alpha)

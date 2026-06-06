@@ -2,7 +2,6 @@ import torch
 import triton
 import triton.language as tl
 
-from triton_ptx.helpers import get_ptx_constexpr
 from triton_ptx.kernels.base import TritonPTXKernel
 
 _ptx_kernel = {
@@ -32,8 +31,8 @@ class MSELossKernel(TritonPTXKernel):
         partial_sum = tl.sum(sq, axis=0)
         tl.atomic_add(loss_ptr, partial_sum, sem="relaxed")
 
-    def get_random_input(self, size=1_000_000):
-        return torch.randn(size, device="cuda"), torch.randn(size, device="cuda")
+    def get_random_input(self, size=10_000_000):
+        return self._rand_1d(size), self._rand_1d(size)
 
     def forward_triton(self, inputs, ptx=False):
         p, t = inputs
@@ -51,7 +50,8 @@ class MSELossKernel(TritonPTXKernel):
                 res,
                 loss,
                 n_elements,
-                BLOCK_SIZE=(get_ptx_constexpr(self.ptx, "BLOCK_SIZE") or self.block_size),
+                BLOCK_SIZE=self.ptx["BLOCK_SIZE"],
+                num_warps=self.ptx["num_warps"],
             )
         return loss / n_elements, kernel
 

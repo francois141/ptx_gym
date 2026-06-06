@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
+import torch
 import triton
 
 from triton_ptx.helpers import get_ptx_code, has_ptx_code
@@ -33,6 +34,10 @@ class TritonPTXKernel(ABC):
     @abstractmethod
     def kernel(*args, **kwargs):
         raise NotImplementedError
+
+    @staticmethod
+    def _rand_1d(size, *, dtype=torch.float32):
+        return torch.rand(size, device="cuda", dtype=dtype)
 
     @abstractmethod
     def get_random_input(self, *args, **kwargs):
