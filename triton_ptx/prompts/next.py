@@ -227,9 +227,7 @@ def generate_prompts(
 
 
 def main():
-    for path in generate_prompts():
-        print(path)
-
+    generate_prompts()
 
 if __name__ == "__main__":
     main()

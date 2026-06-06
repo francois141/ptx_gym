@@ -84,8 +84,7 @@ def generate_prompts(*, num_answers=3):
     return written_files
 
 def main():
-    for path in generate_prompts():
-        print(path)
+    generate_prompts()
 
 if __name__ == "__main__":
     main()
