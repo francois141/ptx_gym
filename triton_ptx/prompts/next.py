@@ -8,6 +8,7 @@ from triton_ptx.helpers import get_ptx_constexprs
 from triton_ptx.helpers import extract_specification
 from triton_ptx.helpers import extract_specification_from_operator
 from triton_ptx.prompts import (
+    commenting_rules,
     correctness_rules,
     extracted_signature_information,
     follow_up_task,
@@ -140,6 +141,7 @@ def prompt_builder(
             kernel_name=spec.kernel_name,
         ),
         correctness_rules(),
+        commenting_rules(),
         performance_rules(target, version),
         triton_kernel_block(spec.source),
         candidate_results_block(candidates),

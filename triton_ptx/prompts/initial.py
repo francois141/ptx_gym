@@ -7,6 +7,7 @@ from triton_ptx.helpers import (
     extract_specification_from_operator,
 )
 from triton_ptx.prompts import (
+    commenting_rules,
     correctness_rules,
     extracted_signature_information,
     initial_task,
@@ -44,6 +45,7 @@ def prompt_builder(
             kernel_name=spec.kernel_name,
         ),
         correctness_rules(),
+        commenting_rules(),
         performance_rules(target, version),
         triton_kernel_block(spec.source),
         output_contract(),

@@ -158,6 +158,17 @@ def correctness_rules():
 """.strip()
 
 
+def commenting_rules():
+    return """
+## PTX Commenting Rules
+
+- Document the PTX logic with concise `//` comments written in plain human language.
+- Add a short comment before each logical group of PTX instructions that explains the purpose of that group.
+- Use comments to explain important indexing, masking, data movement, reductions, and stores.
+- Keep comments accurate and tightly coupled to the PTX they describe.
+""".strip()
+
+
 def performance_rules(target, version):
     return """
 ## Performance Rules
@@ -224,8 +235,8 @@ ptx_kernel = {
 - for each tl.constexpr parameter, choose the appropriate compile-time value and put it directly in the dictionary using the constexpr parameter name as the key;
 - use only Python literal values for constexpr dictionary values;
 - make the PTX string valid PTX;
+- include concise human-readable PTX comments that explain the logic and each logical instruction group;
 - ASCII-only;
 - free of markdown fences;
-- free of comments;
 - free of explanations.
 """.strip()
