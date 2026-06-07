@@ -1,6 +1,6 @@
 
 from triton_ptx.kernels import kernel_list
-from triton_ptx.sandbox import OutputVerifier
+from triton_ptx.evaluation import OutputVerifier
 
 
 def test_kernel(kernel) -> bool:

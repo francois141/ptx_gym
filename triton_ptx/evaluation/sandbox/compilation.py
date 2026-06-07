@@ -6,8 +6,6 @@ from abc import ABC, abstractmethod
 import contextlib
 import io
 
-from triton_ptx.kernels import test_kernel
-
 
 class CompilationRunnerBase(ABC):
     def __init__(self, kernel, ptx_code):
@@ -23,14 +21,16 @@ class CompilationRunnerBase(ABC):
     def run(self):
         pass
 
+
 class PTXCompilationRunner(CompilationRunnerBase):
     def run(self):
         op = self.create_kernel()
 
         # Suppress stdout/stderr during compilation
-        with contextlib.redirect_stdout(io.StringIO()), \
-             contextlib.redirect_stderr(io.StringIO()):
-
+        with (
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
             try:
                 op.forward_triton(op.get_random_input(), ptx=True)
                 return {
@@ -51,7 +51,7 @@ class PTXCompilationRunner(CompilationRunnerBase):
             }
 
         repro_cmd = match.group(1).strip()
-        
+
         try:
             result = subprocess.run(
                 shlex.split(repro_cmd),
@@ -87,15 +87,3 @@ class PTXCompilationRunner(CompilationRunnerBase):
 def run_ptx_compilation(kernel, ptx_code):
     runner = PTXCompilationRunner(kernel, ptx_code)
     return runner.run()
-
-
-if __name__ == "__main__":
-    kernel = test_kernel
-
-
-    invalid_ptx = run_ptx_compilation(
-        kernel,
-        ptx_code="this is invalid_ptx",
-    )
-
-    print(invalid_ptx)

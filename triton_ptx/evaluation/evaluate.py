@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import math
+import json
 import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-
-import json
-
 from triton_ptx.helpers import clear_triton_cache
-from triton_ptx.sandbox import PTXBenchmarkRunner, run_ptx_compilation, OutputVerifier
+from triton_ptx.evaluation.sandbox import (
+    OutputVerifier,
+    PTXBenchmarkRunner,
+    run_ptx_compilation,
+)
 
 
 def _json_safe(value: Any) -> Any:
@@ -54,6 +56,7 @@ def benchmark_operator(operator):
     inputs = operator.get_random_input()
     return runner.evaluate(operator, inputs)
 
+
 @dataclass(frozen=True)
 class PromptCandidate:
     code: str
@@ -62,6 +65,7 @@ class PromptCandidate:
     p20: float
     p50: float
     p80: float
+
 
 @dataclass(order=True)
 class EvaluatedCandidate:

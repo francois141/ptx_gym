@@ -4,7 +4,6 @@ import random
 
 import torch
 from triton_ptx.helpers import has_ptx_code
-from triton_ptx.kernels import test_kernel
 
 
 class BaseVerifier(ABC):
@@ -234,27 +233,3 @@ class OutputVerifier(BaseVerifier):
                 }
 
         return True
-
-
-def main() -> bool:
-    verifier = OutputVerifier()
-    passed = True
-
-    kernel_cls = test_kernel
-    op = kernel_cls()
-
-    if not has_ptx_code(getattr(op, "ptx", None)):
-        return passed
-
-    ok = verifier.verify(op)
-    print(f"[{'PASSED' if ok else 'FAILED'}] {kernel_cls.__name__}")
-
-    if not ok:
-        print(verifier.last_report)
-        passed = False
-
-    return passed
-
-
-if __name__ == "__main__":
-    main()

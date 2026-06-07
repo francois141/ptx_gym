@@ -1,133 +1,77 @@
 # Triton PTX
 
-Utilities for prompt generation, PTX extraction, compilation, verification, and test-time scaling loops.
+Utilities for prompt generation, PTX extraction, evaluation, verification, and test-time scaling.
 
-## Project Layout
+## Layout
 
 - `kernels/`: Triton kernel implementations and embedded PTX payloads.
-- `generator/`: Endpoints/connectors used to call LLMs.
-- `evaluation/`: Candidate evaluation logic and serialized result schema.
-- `helpers/`: Shared utilities for environment detection, storage, Triton helpers, and prompt extraction.
-- `policy/`: Policy logic for test-time scaling selection.
+- `generator/`: LLM client wrappers used during candidate generation.
+- `evaluation/`: Candidate evaluation logic plus `evaluation/sandbox/` helpers for compilation, verification, and benchmarking.
+- `helpers/`: Shared utilities for environment detection, storage, and Triton integration.
+- `policy/`: Candidate selection logic.
 - `prompts/`: Prompt builders for the test-time scaling workflow.
-- `sandbox/`: Compilation, verification, and benchmarking helpers used by evaluation.
-- `triton_ptx/*.py`: Top-level launchers and entrypoints.
+- `triton_ptx/*.py`: User-facing entrypoints.
 
-## Environment
+## Common Commands
 
-To see which GPU you are currently running on:
+Inspect the current GPU environment:
 
 ```bash
 python3 -m triton_ptx.helpers.environment
 ```
 
-## Commands
-
-### Test-Time Scaling
-
-Run the loop for a specific operator:
+Run test-time scaling for one kernel:
 
 ```bash
 python3 -m triton_ptx.test_time_scaling_loop AddKernel
 ```
 
-Write artifacts to a custom output directory:
+Write test-time scaling artifacts to a custom directory:
 
 ```bash
 python3 -m triton_ptx.test_time_scaling_loop AddKernel --output-dir output
 ```
 
-### Prompt Generation
-
-Generate initial prompts for all kernels:
+Generate prompt payloads:
 
 ```bash
 python3 -m triton_ptx.prompts.initial
-```
-
-Generate follow-up prompt templates:
-
-```bash
 python3 -m triton_ptx.prompts.next
 ```
 
-### PTX Extraction and Compilation
-
-Extract PTX values from Triton kernels:
+Extract embedded PTX from Triton kernels:
 
 ```bash
 python3 -m triton_ptx.extract_ptx
 ```
 
-Verify compilation process:
-
-```bash
-python3 -m triton_ptx.sandbox.compilation
-```
-
-Verify verification process:
-
-```bash
-python3 -m triton_ptx.sandbox.verification
-```
-
-Summarize the best valid archived PTX winner per kernel from `database/`:
+Summarize archived winners from `database/`:
 
 ```bash
 python3 -m triton_ptx.measure_ptx
-```
-
-Summarize a different archive root:
-
-```bash
 python3 -m triton_ptx.measure_ptx --database-dir /path/to/database
 ```
 
-### Verification
-
-Verify generated Triton kernels:
+Verify Triton kernels against PyTorch:
 
 ```bash
 python3 -m triton_ptx.verify_triton_kernels
 ```
 
-Verify generated PTX kernels:
+Verify PTX overrides against Triton kernels:
 
 ```bash
 python3 -m triton_ptx.verify_generated_ptx
 ```
 
-## Linting `triton_ptx/`
-
-Run Ruff directly on this folder:
+Lint the package:
 
 ```bash
 python3 -m ruff check triton_ptx
-```
-
-Auto-fix lint issues when possible:
-
-```bash
 python3 -m ruff check --fix triton_ptx
-```
-
-## Test before commit
-
-```bash
-python3 -m ruff check --fix triton_ptx && \
-python3 -m triton_ptx.prompts.initial && \
-python3 -m triton_ptx.prompts.next && \
-python3 -m triton_ptx.extract_ptx && \
-python3 -m triton_ptx.sandbox.compilation && \
-python3 -m triton_ptx.sandbox.verification && \
-python3 -m triton_ptx.measure_ptx && \
-python3 -m triton_ptx.verify_triton_kernels && \
-python3 -m triton_ptx.verify_generated_ptx && \
-printf '\033[32mSUCCESS\033[0m\n' || \
-printf '\033[31mFAILURE\033[0m\n'
 ```
 
 ## Notes
 
-- Test-time scaling writes the latest run to `output/` and also archives each run under `database/<timestamp>/`.
+- Test-time scaling writes the latest run to `output/` and archives runs under `database/<timestamp>/`.
 - `measure_ptx` reads archived `output_winner_*.json` files and reports the best valid `speedup_vs_triton` found for each kernel.
