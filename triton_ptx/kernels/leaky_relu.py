@@ -4,14 +4,8 @@ import triton.language as tl
 
 from triton_ptx.kernels.base import TritonPTXKernel
 
-_ptx_kernel = {
-    "ptx": None,
-    "BLOCK_SIZE": None,
-}
-
-
 class LeakyReLUKernel(TritonPTXKernel):
-    def __init__(self, negative_slope=0.01, block_size=1024, ptx=_ptx_kernel):
+    def __init__(self, negative_slope=0.01, block_size=1024, ptx=None):
         self.negative_slope = negative_slope
         self.block_size = block_size
         self.init_compiled_kernels(ptx=ptx)

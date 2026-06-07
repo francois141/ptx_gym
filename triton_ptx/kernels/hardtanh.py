@@ -4,14 +4,8 @@ import triton.language as tl
 
 from triton_ptx.kernels.base import TritonPTXKernel
 
-_ptx_kernel = {
-    "ptx": None,
-    "BLOCK_SIZE": None,
-}
-
-
 class HardtanhKernel(TritonPTXKernel):
-    def __init__(self, min_val=-1.0, max_val=1.0, block_size=1024, ptx=_ptx_kernel):
+    def __init__(self, min_val=-1.0, max_val=1.0, block_size=1024, ptx=None):
         self.min_val = min_val
         self.max_val = max_val
         self.block_size = block_size

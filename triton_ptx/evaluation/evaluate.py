@@ -50,7 +50,7 @@ def benchmark_operator(operator):
     Returns the same metrics mapping as PTXBenchmarkRunner.evaluate(), including
     a "ptx" Timing object used by triton_ptx.evaluation.
     """
-    runner = PTXBenchmarkRunner([])
+    runner = PTXBenchmarkRunner()
     inputs = operator.get_random_input()
     return runner.evaluate(operator, inputs)
 
@@ -171,7 +171,6 @@ class BaseCandidateEvaluator(ABC):
         self.clear_cache = clear_cache
         self.kernel_name = operator_cls.__name__
         self.git_commit_hash = self._resolve_git_commit_hash()
-        self.benchmark_runner = PTXBenchmarkRunner([])
 
     @staticmethod
     def _resolve_git_commit_hash() -> str:

@@ -5,16 +5,8 @@ import triton.language as tl
 from triton_ptx.helpers import jit_fixed_parameters
 from triton_ptx.kernels.base import TritonPTXKernel
 
-_ptx_kernel = {
-    "ptx": None,
-    "BLOCK_SIZE": None,
-}
-
-
-
-
 class FancyFusedKernel(TritonPTXKernel):
-    def __init__(self, *, block_size=1024, ptx=_ptx_kernel):
+    def __init__(self, *, block_size=1024, ptx=None):
         self.block_size = block_size
         self.init_compiled_kernels(ptx=ptx, jit=jit_fixed_parameters)
 

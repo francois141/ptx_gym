@@ -4,11 +4,9 @@ import triton.language as tl
 
 from triton_ptx.kernels.base import TritonPTXKernel
 
-_ptx_kernel = {"ptx": None, "BLOCK_SIZE": None}
-
 
 class SmoothL1LossKernel(TritonPTXKernel):
-    def __init__(self, beta=1.0, block_size=1024, ptx=_ptx_kernel):
+    def __init__(self, beta=1.0, block_size=1024, ptx=None):
         self.beta = beta
         self.block_size = block_size
         self.init_compiled_kernels(ptx=ptx)

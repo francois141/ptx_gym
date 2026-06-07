@@ -4,17 +4,18 @@ Utilities for prompt generation, PTX extraction, compilation, verification, and 
 
 ## Project Layout
 
-- `kernel/`: Triton kernel implementations.
+- `kernels/`: Triton kernel implementations and embedded PTX payloads.
 - `generator/`: Endpoints/connectors used to call LLMs.
-- `evaluation/`: Main evaluation loop.
+- `evaluation/`: Candidate evaluation logic and serialized result schema.
+- `helpers/`: Shared utilities for environment detection, storage, Triton helpers, and prompt extraction.
 - `policy/`: Policy logic for test-time scaling selection.
 - `prompts/`: Prompt builders for the test-time scaling workflow.
-- `sandbox/`: Isolated environment utilities (for example, compilation).
+- `sandbox/`: Compilation, verification, and benchmarking helpers used by evaluation.
 - `triton_ptx/*.py`: Top-level launchers and entrypoints.
 
 ## Environment
 
-To see which gpu you are currently running on
+To see which GPU you are currently running on:
 
 ```bash
 python3 -m triton_ptx.helpers.environment
@@ -30,21 +31,21 @@ Run the loop for a specific operator:
 python3 -m triton_ptx.test_time_scaling_loop AddKernel
 ```
 
-Run with default configuration:
+Write artifacts to a custom output directory:
 
 ```bash
-python3 -m triton_ptx.test_time_scaling_loop
+python3 -m triton_ptx.test_time_scaling_loop AddKernel --output-dir output
 ```
 
 ### Prompt Generation
 
-Generate the initial prompt:
+Generate initial prompts for all kernels:
 
 ```bash
 python3 -m triton_ptx.prompts.initial
 ```
 
-Generate the next prompt:
+Generate follow-up prompt templates:
 
 ```bash
 python3 -m triton_ptx.prompts.next
@@ -70,16 +71,16 @@ Verify verification process:
 python3 -m triton_ptx.sandbox.verification
 ```
 
-Verify evaluation process:
-
-```bash
-python3 -m triton_ptx.sandbox.evaluation
-```
-
-Measure PTX performance:
+Summarize the best valid archived PTX winner per kernel from `database/`:
 
 ```bash
 python3 -m triton_ptx.measure_ptx
+```
+
+Summarize a different archive root:
+
+```bash
+python3 -m triton_ptx.measure_ptx --database-dir /path/to/database
 ```
 
 ### Verification
@@ -125,3 +126,8 @@ python3 -m triton_ptx.verify_generated_ptx && \
 printf '\033[32mSUCCESS\033[0m\n' || \
 printf '\033[31mFAILURE\033[0m\n'
 ```
+
+## Notes
+
+- Test-time scaling writes the latest run to `output/` and also archives each run under `database/<timestamp>/`.
+- `measure_ptx` reads archived `output_winner_*.json` files and reports the best valid `speedup_vs_triton` found for each kernel.
