@@ -54,6 +54,7 @@ class AddKernel(TritonPTXKernel):
                     get_ptx_constexpr(self.ptx, "KERNEL_BLOCK_SIZE")
                     or self.block_size
                 ),
+                **self.ptx_launch_kwargs(),
             )
         return output, kernel
 

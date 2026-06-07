@@ -56,7 +56,7 @@ class ArgminKernel(TritonPTXKernel):
                 out,
                 n_elements,
                 BLOCK_SIZE=self.ptx["BLOCK_SIZE"],
-                num_warps=self.ptx["num_warps"],
+                **self.ptx_launch_kwargs(),
             )
         packed = (int(out[0].item()) & 0xFFFFFFFFFFFFFFFF) ^ 0x8000000000000000
         index = packed & 0xFFFFFFFF

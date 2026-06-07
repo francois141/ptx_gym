@@ -42,7 +42,7 @@ class SmoothL1LossKernel(TritonPTXKernel):
                 n_elements,
                 self.beta,
                 BLOCK_SIZE=self.ptx["BLOCK_SIZE"],
-                num_warps=self.ptx["num_warps"],
+                **self.ptx_launch_kwargs(),
             )
         return accum / n_elements, kernel
 

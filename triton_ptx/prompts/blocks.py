@@ -176,9 +176,9 @@ def performance_rules(target, version):
 Optimize for the specific Triton kernel shown below. Use only optimizations that are semantically valid for this kernel.
 
 Launch tuning guidance:
-- `num_warps` is customizable and should be chosen deliberately for this kernel.
-- In a 1D launch, each warp corresponds to 32 threads, so total launched threads per CTA are `num_warps * 32`.
-- Use `num_warps` to tune the thread count you launch per PTX kernel for the best performance while preserving correctness.
+- `num_threads_x` should be explicitly defined for this kernel and determines the number of threads launched in the CTA's x dimension.
+- If you need a multi-dimensional CTA shape, you may also define `num_threads_y` and `num_threads_z` to specify the y and z dimensions.
+- Choose the launch dimensions deliberately to achieve the best performance while preserving correctness.
 
 For elementwise kernels:
 1. Use coalesced global loads and stores.
@@ -225,13 +225,14 @@ The output must be:
 
 ptx_kernel = {
     "ptx": \"\"\"<valid PTX code>\"\"\",
-    "num_warps": <chosen_num_warps>,
+    "num_threads_x": <optional_threads_x>,
+    "num_threads_y": <optional_threads_y>,
+    "num_threads_z": <optional_threads_z>,
     "<constexpr_name>": <chosen_constexpr_value>,
 }
 
 - generate exactly one answer;
 - put the PTX code directly under the top-level `"ptx"` key;
-- choose `num_warps` and put it under the top-level `"num_warps"` key as a Python integer literal;
 - for each tl.constexpr parameter, choose the appropriate compile-time value and put it directly in the dictionary using the constexpr parameter name as the key;
 - use only Python literal values for constexpr dictionary values;
 - make the PTX string valid PTX;

@@ -313,7 +313,7 @@ static cuLaunchKernelEx_t getLaunchKernelExHandle() {{
   return cuLaunchKernelExHandle;
 }}
 
-static void _launch(int gridX, int gridY, int gridZ, int num_warps, int num_ctas, int launch_cooperative_grid, int launch_pdl, int shared_memory, CUstream stream, CUfunction function, CUdeviceptr global_scratch, CUdeviceptr profile_scratch{', ' + arg_decls if len(arg_decls) > 0 else ''}) {{
+static void _launch(int gridX, int gridY, int gridZ, int num_warps, int num_ctas, int launch_cooperative_grid, int launch_pdl, int shared_memory, int num_threads_x, int num_threads_y, int num_threads_z, CUstream stream, CUfunction function, CUdeviceptr global_scratch, CUdeviceptr profile_scratch{', ' + arg_decls if len(arg_decls) > 0 else ''}) {{
   void *params[] = {{ {', '.join(params)} }};
   if (gridX*gridY*gridZ > 0) {{
     // 4 attributes that we can currently pass maximum
@@ -327,9 +327,9 @@ static void _launch(int gridX, int gridY, int gridZ, int num_warps, int num_ctas
     config.gridDimY = gridY;
     config.gridDimZ = gridZ;
 
-    config.blockDimX = 32 * num_warps;
-    config.blockDimY = 1;
-    config.blockDimZ = 1;
+    config.blockDimX = num_threads_x;
+    config.blockDimY = num_threads_y;
+    config.blockDimZ = num_threads_z;
     config.sharedMemBytes = shared_memory;
     config.hStream = stream;
     config.attrs = launchAttr;
@@ -510,8 +510,28 @@ static PyObject* launch(PyObject* self, PyObject* args) {{
   }}
 
   int num_warps, num_ctas, shared_memory;
-  if (!PyArg_ParseTuple(kernel_metadata, \"iii\", &num_warps, &num_ctas, &shared_memory)) {{
+  int num_threads_x, num_threads_y, num_threads_z;
+  if (!PyTuple_Check(kernel_metadata)) {{
     PyErr_SetString(PyExc_TypeError, "kernel_metadata must be a tuple");
+    return NULL;
+  }}
+  Py_ssize_t kernel_metadata_len = PyTuple_Size(kernel_metadata);
+  if (kernel_metadata_len == 3) {{
+    if (!PyArg_ParseTuple(kernel_metadata, \"iii\", &num_warps, &num_ctas, &shared_memory)) {{
+      PyErr_SetString(PyExc_TypeError, "kernel_metadata must contain num_warps, num_ctas, and shared_memory");
+      return NULL;
+    }}
+    num_threads_x = 32 * num_warps;
+    num_threads_y = 1;
+    num_threads_z = 1;
+  }} else if (kernel_metadata_len == 6) {{
+    if (!PyArg_ParseTuple(kernel_metadata, \"iiiiii\", &num_warps, &num_ctas, &shared_memory,
+                          &num_threads_x, &num_threads_y, &num_threads_z)) {{
+      PyErr_SetString(PyExc_TypeError, "kernel_metadata must contain num_warps, num_ctas, shared_memory, num_threads_x, num_threads_y, and num_threads_z");
+      return NULL;
+    }}
+  }} else {{
+    PyErr_SetString(PyExc_TypeError, "kernel_metadata must have 3 or 6 elements");
     return NULL;
   }}
 
@@ -546,7 +566,7 @@ static PyObject* launch(PyObject* self, PyObject* args) {{
   {newline.join(tma_decls)}
   {newline.join(float_storage_decls)}
   Py_BEGIN_ALLOW_THREADS;
-  _launch(gridX, gridY, gridZ, num_warps, num_ctas, launch_cooperative_grid, launch_pdl, shared_memory, (CUstream)_stream, (CUfunction)_function, global_scratch, profile_scratch{', ' + ', '.join(internal_args_list) if len(internal_args_list) > 0 else ''});
+  _launch(gridX, gridY, gridZ, num_warps, num_ctas, launch_cooperative_grid, launch_pdl, shared_memory, num_threads_x, num_threads_y, num_threads_z, (CUstream)_stream, (CUfunction)_function, global_scratch, profile_scratch{', ' + ', '.join(internal_args_list) if len(internal_args_list) > 0 else ''});
   Py_END_ALLOW_THREADS;
   if (PyErr_Occurred()) {{
     return NULL;

@@ -45,7 +45,7 @@ class ReduceSumKernel(TritonPTXKernel):
                 max(1, min(triton.cdiv(n_elements, ptx_tile_size), 4096)),
             )
             kernel = self.require_compiled_ptx()[ptx_grid](
-                inputs, output, n_elements, BLOCK_SIZE=ptx_tile_size, num_warps=4,
+                inputs, output, n_elements, BLOCK_SIZE=ptx_tile_size, **self.ptx_launch_kwargs(num_warps=4),
             )
         return output, kernel
 

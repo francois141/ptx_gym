@@ -106,6 +106,9 @@ def sm_arch_from_capability(capability: int):
 class CUDAOptions:
     num_warps: int = 4
     num_ctas: int = 1
+    num_threads_x: Optional[int] = None
+    num_threads_y: Optional[int] = None
+    num_threads_z: Optional[int] = None
     num_stages: int = 3
     warp_size: int = 32
     # maxnreg corresponds to the ptx parameter .maxnreg, which controls the
@@ -139,6 +142,10 @@ class CUDAOptions:
         object.__setattr__(self, 'extern_libs', tuple(extern_libs.items()))
         assert self.num_warps > 0 and (self.num_warps & (self.num_warps - 1)) == 0, \
                "num_warps must be a power of 2"
+        for axis_name in ("num_threads_x", "num_threads_y", "num_threads_z"):
+            axis_value = getattr(self, axis_name)
+            if axis_value is not None and axis_value <= 0:
+                raise AssertionError(f"{axis_name} must be positive")
 
     def hash(self):
         hash_dict = dict(self.__dict__)
@@ -201,10 +208,26 @@ class CUDABackend(BaseBackend):
         return CUDAOptions(**args)
 
     def pack_metadata(self, metadata):
+        if metadata.num_ctas != 1:
+            raise NotImplementedError(
+                f"TODO: Implement support for num_ctas > 1 (got num_ctas={metadata.num_ctas})"
+            )
+
+        num_threads_x = (
+            metadata.num_threads_x
+            if metadata.num_threads_x is not None
+            else metadata.num_warps * metadata.warp_size
+        )
+        num_threads_y = metadata.num_threads_y if metadata.num_threads_y is not None else 1
+        num_threads_z = metadata.num_threads_z if metadata.num_threads_z is not None else 1
+
         return (
             metadata.num_warps,
             metadata.num_ctas,
             metadata.shared,
+            num_threads_x,
+            num_threads_y,
+            num_threads_z,
         )
 
     def get_codegen_implementation(self, options):
