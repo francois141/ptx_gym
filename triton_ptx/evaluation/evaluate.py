@@ -76,9 +76,13 @@ class EvaluatedCandidate:
     compiles: bool = field(compare=False)
     correct: bool = field(compare=False)
     message: str = field(compare=False)
+    triton_p20: float = field(compare=False)
+    triton_p50: float = field(compare=False)
+    triton_p80: float = field(compare=False)
     p20: float = field(compare=False)
     p50: float = field(compare=False)
     p80: float = field(compare=False)
+    speedup_vs_triton: float = field(compare=False)
     compile_output: str = field(default="", compare=False)
     compile_error: str = field(default="", compare=False)
     timing_error: str = field(default="", compare=False)
@@ -109,11 +113,15 @@ class EvaluatedCandidate:
             "index": self.index,
             "compiles": self.compiles,
             "correct": self.correct,
+            "triton_p20": self.triton_p20,
+            "triton_p50": self.triton_p50,
+            "triton_p80": self.triton_p80,
             "p20": self.p20,
             "p50": self.p50,
             "p80": self.p80,
             "execution_time": self.p50,
             "runtime": self.p50,
+            "speedup_vs_triton": self.speedup_vs_triton,
         }
 
     def prompt_candidate(self) -> PromptCandidate:
@@ -163,6 +171,7 @@ class BaseCandidateEvaluator(ABC):
         self.clear_cache = clear_cache
         self.kernel_name = operator_cls.__name__
         self.git_commit_hash = self._resolve_git_commit_hash()
+        self.benchmark_runner = PTXBenchmarkRunner([])
 
     @staticmethod
     def _resolve_git_commit_hash() -> str:
@@ -256,6 +265,7 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
         try:
             metrics = benchmark_operator(operator)
             ptx_timing = metrics["ptx"]
+            triton_timing = metrics["triton"]
 
             if ptx_timing is None:
                 raise RuntimeError("PTX timing metrics were not produced.")
@@ -269,9 +279,17 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
                 compiles=True,
                 correct=True,
                 message="Compiled, passed correctness, benchmarked successfully",
+                triton_p20=float(triton_timing.p20),
+                triton_p50=float(triton_timing.p50),
+                triton_p80=float(triton_timing.p80),
                 p20=float(ptx_timing.p20),
                 p50=float(ptx_timing.p50),
                 p80=float(ptx_timing.p80),
+                speedup_vs_triton=(
+                    float(triton_timing.p50 / ptx_timing.p50)
+                    if ptx_timing.p50 > 0
+                    else None
+                ),
                 compile_output=compile_output,
                 compile_error=compile_error,
                 verifier_report=verifier_report,
@@ -314,9 +332,13 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
             compiles=compiles,
             correct=correct,
             message=message,
+            triton_p20=math.inf,
+            triton_p50=math.inf,
+            triton_p80=math.inf,
             p20=math.inf,
             p50=math.inf,
             p80=math.inf,
+            speedup_vs_triton=0,
             compile_output=compile_output,
             compile_error=compile_error,
             timing_error=timing_error,
