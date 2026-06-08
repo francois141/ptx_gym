@@ -242,4 +242,15 @@ ptx_kernel = {
 - ASCII-only;
 - free of markdown fences;
 - free of explanations.
+-  Predicated execution does not support block syntax. Instead, the predicate must be applied individually to each instruction by placing it at the beginning of the instruction. 
+
+The following syntax is invalid:
+
+@p_warp0 {
+    setp.lt.u32 pvalid, rLane, 8;
+}
+
+The following syntax is valid
+
+@p_warp0 setp.lt.u32 pvalid, rLane, 8;
 """.strip()
