@@ -179,6 +179,8 @@ Launch tuning guidance:
 - `num_threads_x` should be explicitly defined for this kernel and determines the number of threads launched in the CTA's x dimension.
 - If you need a multi-dimensional CTA shape, you may also define `num_threads_y` and `num_threads_z` to specify the y and z dimensions.
 - Choose the launch dimensions deliberately to achieve the best performance while preserving correctness.
+- It is important to evaluate a range of grid and block sizes, as these parameters can significantly impact performance.
+- Avoid assuming that the current best-performing configuration is optimal. In practice, seemingly unexpected block sizes or thread counts can sometimes deliver superior performance.
 
 For elementwise kernels:
 1. Use coalesced global loads and stores.
