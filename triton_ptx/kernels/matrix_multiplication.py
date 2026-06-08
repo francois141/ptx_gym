@@ -1,0 +1,107 @@
+from __future__ import annotations
+
+import torch
+import triton
+import triton.language as tl
+
+from triton_ptx.kernels.base import TritonPTXKernel
+
+
+class MatrixMultiplicationKernel(TritonPTXKernel):
+    def __init__(self, *, block_m=128, block_n=128, block_k=32, ptx=None):
+        self.block_m = block_m
+        self.block_n = block_n
+        self.block_k = block_k
+        self.init_compiled_kernels(ptx=ptx)
+
+    @staticmethod
+    def kernel(
+        a_ptr,
+        b_ptr,
+        c_ptr,
+        stride_am,
+        stride_bk,
+        stride_cm,
+        k_dim,
+        BLOCK_M: tl.constexpr,
+        BLOCK_N: tl.constexpr,
+        BLOCK_K: tl.constexpr,
+    ):
+        pid_m = tl.program_id(axis=0)
+        pid_n = tl.program_id(axis=1)
+
+        offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+        offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+        offs_k = tl.arange(0, BLOCK_K)
+
+        a_ptrs = a_ptr + offs_m[:, None] * stride_am + offs_k[None, :]
+        b_ptrs = b_ptr + offs_k[:, None] * stride_bk + offs_n[None, :]
+
+        accumulator = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+        for k_start in range(0, tl.cdiv(k_dim, BLOCK_K)):
+            k_remaining = k_dim - k_start * BLOCK_K
+            a = tl.load(a_ptrs, mask=offs_k[None, :] < k_remaining, other=0.0)
+            b = tl.load(b_ptrs, mask=offs_k[:, None] < k_remaining, other=0.0)
+            accumulator = tl.dot(a, b, accumulator)
+            a_ptrs += BLOCK_K
+            b_ptrs += BLOCK_K * stride_bk
+
+        c = accumulator.to(tl.float32)
+        c_ptrs = c_ptr + offs_m[:, None] * stride_cm + offs_n[None, :]
+        c_mask = (offs_m[:, None] < 4096) & (offs_n[None, :] < 4096)
+        tl.store(c_ptrs, c, mask=c_mask)
+
+    def get_random_input(self, k=1024):
+        a = torch.randn((4096, k), device="cuda", dtype=torch.float32)
+        b = torch.randn((k, 4096), device="cuda", dtype=torch.float32)
+        return a, b
+
+    def forward_triton(self, inputs, ptx=False):
+        a, b = inputs
+        assert a.shape[0] == 4096, "The output matrix must be 4096 by 4096."
+        assert b.shape[1] == 4096, "The output matrix must be 4096 by 4096."
+        assert a.shape[1] == b.shape[0], "The sliding dimension must be K."
+        assert a.stride(1) == 1, "A's K dimension must have unit stride."
+        assert b.stride(1) == 1, "B's N dimension must have unit stride."
+
+        c = torch.empty((4096, 4096), device=a.device, dtype=a.dtype)
+        assert c.stride(1) == 1, "C's N dimension must have unit stride."
+        grid = (triton.cdiv(4096, self.block_m), triton.cdiv(4096, self.block_n))
+        launch_kwargs = dict(
+            BLOCK_M=self.block_m,
+            BLOCK_N=self.block_n,
+            BLOCK_K=self.block_k,
+        )
+
+        if not ptx:
+            kernel = self.compiled_kernel[grid](
+                a,
+                b,
+                c,
+                a.stride(0),
+                b.stride(0),
+                c.stride(0),
+                a.shape[1],
+                **launch_kwargs,
+            )
+        else:
+            kernel = self.require_compiled_ptx()[grid](
+                a,
+                b,
+                c,
+                a.stride(0),
+                b.stride(0),
+                c.stride(0),
+                a.shape[1],
+                **self.ptx_launch_kwargs(),
+            )
+        return c, kernel
+
+    def forward_torch(self, inputs):
+        a, b = inputs
+        assert a.shape[0] == 4096, "The output matrix must be 4096 by 4096."
+        assert b.shape[1] == 4096, "The output matrix must be 4096 by 4096."
+        assert a.shape[1] == b.shape[0], "The sliding dimension must be K."
+        assert a.stride(1) == 1, "A's K dimension must have unit stride."
+        assert b.stride(1) == 1, "B's N dimension must have unit stride."
+        return torch.matmul(a, b)

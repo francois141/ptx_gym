@@ -16,6 +16,7 @@ from .l2_norm import L2NormKernel
 from .leaky_relu import LeakyReLUKernel
 from .log_softmax import LogSoftmaxKernel
 from .masked_cumsum import MaskedCumsumKernel
+from .matrix_multiplication import MatrixMultiplicationKernel
 from .mean_squared_error import MeanSquaredErrorKernel
 from .min_dim import MinDimKernel
 from .mse_loss import MSELossKernel
@@ -53,11 +54,11 @@ __all__ = [
     "LeakyReLUKernel",
     "LogSoftmaxKernel",
     "MaskedCumsumKernel",
+    "MatrixMultiplicationKernel",
+    "MatrixScalarMultiplicationKernel",
     "MeanSquaredErrorKernel",
     "MinDimKernel",
     "MSELossKernel",
-    "MatrixMultiplicationKernel",
-    "MatrixScalarMultiplicationKernel",
     "ReLUKernel",
     "ReLUReductionKernel",
     "ReduceSumKernel",
@@ -106,6 +107,7 @@ kernel_list = [
     LeakyReLUKernel,
     LogSoftmaxKernel,
     MaskedCumsumKernel,
+    MatrixMultiplicationKernel,
     MeanSquaredErrorKernel,
     MinDimKernel,
     MSELossKernel,
