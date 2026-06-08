@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import pytest
 import tempfile
+import errno
 
 from pathlib import Path
 
 import triton
 
 from triton.runtime.build import compile_module_from_src
+from triton.runtime.cache import FileCacheManager
 
 TEST_MODULE_C = """
 #include <Python.h>
@@ -89,3 +91,16 @@ def test_compile_module_bad_cache(fresh_knobs_except_libraries):
 
         assert mod.go("huh") == "huh"
         assert mod.go("hello") == "hiya"
+
+
+def test_file_cache_put_ignores_nonempty_tempdir(monkeypatch, fresh_triton_cache):
+    manager = FileCacheManager("test-key")
+
+    def fail_rmdir(path):
+        raise OSError(errno.ENOTEMPTY, "Directory not empty", path)
+
+    monkeypatch.setattr("triton.runtime.cache.os.rmdir", fail_rmdir)
+
+    written = manager.put("hello", "artifact.txt", binary=False)
+
+    assert Path(written).read_text() == "hello"

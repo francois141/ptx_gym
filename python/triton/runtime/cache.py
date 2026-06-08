@@ -1,6 +1,7 @@
 import json
 import os
 import uuid
+import errno
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional
 import base64
@@ -118,7 +119,15 @@ class FileCacheManager(CacheManager):
         # Replace is guaranteed to be atomic on POSIX systems if it succeeds
         # so filepath cannot see a partial write
         os.replace(temp_path, filepath)
-        os.removedirs(temp_dir)
+        try:
+            os.rmdir(temp_dir)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            # Cleanup is best-effort here. Another process or an unexpected
+            # extra file in the temp directory should not fail cache writes.
+            if exc.errno != errno.ENOTEMPTY:
+                raise
         return filepath
 
 
