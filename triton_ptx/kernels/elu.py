@@ -38,7 +38,6 @@ class ELUKernel(TritonPTXKernel):
                 output,
                 n_elements,
                 self.alpha,
-                BLOCK_SIZE=self.ptx["BLOCK_SIZE"],
                 **self.ptx_launch_kwargs(),
             )
         return output, kernel

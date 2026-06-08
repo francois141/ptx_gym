@@ -52,7 +52,6 @@ class CrossEntropyLossKernel(TritonPTXKernel):
                 targets,
                 accum,
                 n_elements,
-                BLOCK_SIZE=self.ptx["BLOCK_SIZE"],
                 **self.ptx_launch_kwargs(),
             )
         return accum, kernel

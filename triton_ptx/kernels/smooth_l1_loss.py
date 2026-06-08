@@ -41,7 +41,6 @@ class SmoothL1LossKernel(TritonPTXKernel):
                 accum,
                 n_elements,
                 self.beta,
-                BLOCK_SIZE=self.ptx["BLOCK_SIZE"],
                 **self.ptx_launch_kwargs(),
             )
         return accum / n_elements, kernel

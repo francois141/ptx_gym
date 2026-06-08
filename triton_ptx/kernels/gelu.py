@@ -121,7 +121,6 @@ class GELUKernel(TritonPTXKernel):
                 x,
                 output,
                 n_elements,
-                BLOCK_SIZE=self.ptx["BLOCK_SIZE"],
                 **self.ptx_launch_kwargs(),
             )
         return output, kernel

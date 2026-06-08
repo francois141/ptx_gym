@@ -36,7 +36,7 @@ class TritonPTXKernel(ABC):
             return launch_kwargs
         launch_kwargs.update({
             key: self.ptx[key]
-            for key in ("num_warps", "num_ctas", "num_threads_x", "num_threads_y", "num_threads_z")
+            for key in ("num_warps", "num_ctas", "num_threads_x", "num_threads_y", "num_threads_z", "BLOCK_M", "BLOCK_N", "BLOCK_K", "BLOCK_SIZE")
             if self.ptx.get(key) is not None
         })
         return launch_kwargs

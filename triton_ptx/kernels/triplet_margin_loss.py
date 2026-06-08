@@ -54,7 +54,6 @@ class TripletMarginLossKernel(TritonPTXKernel):
                 accum,
                 n_elements,
                 self.margin,
-                BLOCK_SIZE=self.ptx["BLOCK_SIZE"],
                 **self.ptx_launch_kwargs(),
             )
         return accum, kernel

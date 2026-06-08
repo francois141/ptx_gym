@@ -46,7 +46,6 @@ class MaskedCumsumKernel(TritonPTXKernel):
                 x,
                 mask,
                 n_elements,
-                BLOCK_SIZE=self.ptx["BLOCK_SIZE"],
                 **self.ptx_launch_kwargs(),
             )
         return out, kernel

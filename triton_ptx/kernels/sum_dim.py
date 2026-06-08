@@ -38,7 +38,6 @@ class SumDimKernel(TritonPTXKernel):
                 inputs,
                 out,
                 n_elements,
-                BLOCK_SIZE=self.ptx["BLOCK_SIZE"],
                 **self.ptx_launch_kwargs(),
             )
 

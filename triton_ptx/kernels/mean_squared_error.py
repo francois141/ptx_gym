@@ -37,7 +37,6 @@ class MeanSquaredErrorKernel(TritonPTXKernel):
                 target,
                 accum,
                 n_elements,
-                BLOCK_SIZE=self.ptx["BLOCK_SIZE"],
                 **self.ptx_launch_kwargs(),
             )
         return accum / n_elements, kernel

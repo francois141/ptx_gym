@@ -45,7 +45,6 @@ class HardtanhKernel(TritonPTXKernel):
                 n_elements,
                 self.min_val,
                 self.max_val,
-                BLOCK_SIZE=self.ptx["BLOCK_SIZE"],
                 **self.ptx_launch_kwargs(),
             )
         return output, kernel

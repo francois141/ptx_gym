@@ -41,7 +41,6 @@ class MSELossKernel(TritonPTXKernel):
                 res,
                 loss,
                 n_elements,
-                BLOCK_SIZE=self.ptx["BLOCK_SIZE"],
                 **self.ptx_launch_kwargs(),
             )
         return loss / n_elements, kernel

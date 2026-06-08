@@ -41,7 +41,6 @@ class ReverseCumsumKernel(TritonPTXKernel):
                 out,
                 inputs,
                 n_elements,
-                BLOCK_SIZE=self.ptx["BLOCK_SIZE"],
                 **self.ptx_launch_kwargs(),
             )
         return out, kernel
