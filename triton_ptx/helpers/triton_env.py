@@ -1,4 +1,4 @@
-import inspect 
+import inspect
 
 import triton
 import triton.language as tl
@@ -35,10 +35,12 @@ def jit_fixed_parameters(fn=None, **triton_kwargs):
 
     def decorator(func):
         params = inspect.signature(func).parameters
+        annotations = inspect.get_annotations(func, eval_str=True)
         do_not_specialize_list = []
-        
+
         for name, param in params.items():
-            if param.annotation is not tl.constexpr:
+            annotation = annotations.get(name, param.annotation)
+            if annotation is not tl.constexpr:
                 do_not_specialize_list.append(name)
 
         return triton.jit(fn=func, do_not_specialize=do_not_specialize_list, **triton_kwargs)
