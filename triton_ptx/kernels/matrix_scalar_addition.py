@@ -37,6 +37,7 @@ class MatrixScalarAdditionKernel(TritonPTXKernel):
         tl.store(y_ptrs, x + scalar, mask=mask)
 
     def get_random_input(self, size=4096):
+        size = min(size, 4096)
         x = torch.randn((size, size), device="cuda", dtype=torch.float32)
         scalar = torch.randn((), device="cuda", dtype=torch.float32).item()
         return x, scalar

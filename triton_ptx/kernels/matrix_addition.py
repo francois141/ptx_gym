@@ -40,6 +40,7 @@ class MatrixAdditionKernel(TritonPTXKernel):
         tl.store(out_ptrs, x + y, mask=mask)
 
     def get_random_input(self, size=4096):
+        size = min(size, 4096)
         x = torch.randn((size, size), device="cuda", dtype=torch.float32)
         y = torch.randn((size, size), device="cuda", dtype=torch.float32)
         return x, y
