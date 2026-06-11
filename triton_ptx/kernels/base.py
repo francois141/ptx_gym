@@ -4,9 +4,8 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 import torch
-import triton
 
-from triton_ptx.helpers import get_ptx_code, has_ptx_code
+from triton_ptx.helpers import get_ptx_code, has_ptx_code, jit_fixed_parameters
 
 
 class TritonPTXKernel(ABC):
@@ -16,12 +15,12 @@ class TritonPTXKernel(ABC):
     compiled_kernel: Any
     compiled_kernel_ptx: Any | None
 
-    def init_compiled_kernels(self, *, ptx: Any, jit=triton.jit) -> None:
+    def init_compiled_kernels(self, *, ptx: Any) -> None:
         self.ptx = ptx
-        self.compiled_kernel = jit(self.kernel)
+        self.compiled_kernel = jit_fixed_parameters(self.kernel)
         self.compiled_kernel_ptx = None
         if has_ptx_code(ptx):
-            self.compiled_kernel_ptx = jit(self.kernel, ptx=get_ptx_code(ptx))
+            self.compiled_kernel_ptx = jit_fixed_parameters(self.kernel, ptx=get_ptx_code(ptx))
 
     def require_compiled_ptx(self):
         if not has_ptx_code(getattr(self, "ptx", None)):
