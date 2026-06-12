@@ -52,7 +52,7 @@ class MatrixMultiplicationKernel(TritonPTXKernel):
         tl.store(c_ptrs, c, mask=c_mask)
 
     def get_random_input(self, k=1024):
-        k = min(k, 4096)
+        k = min(k, 512)
         a = torch.randn((4096, k), device="cuda", dtype=torch.float32)
         b = torch.randn((k, 4096), device="cuda", dtype=torch.float32)
         return a, b

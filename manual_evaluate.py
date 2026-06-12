@@ -11,7 +11,7 @@ from triton_ptx.evaluation.sandbox import (
     PTXBenchmarkRunner,
     run_ptx_compilation,
 )
-from triton_ptx.kernels.add import AddKernel
+from triton_ptx.kernels.matrix_scalar_addition import MatrixScalarAdditionKernel
 
 
 kernel_config = {
@@ -21,123 +21,98 @@ kernel_config = {
 
 .visible .entry kernel(
     .param .u64 x_ptr,
-    .param .u64 y_ptr,
     .param .u64 output_ptr,
-    .param .u32 n_elements,
+    .param .f32 scalar,
+    .param .u32 stride_xm,
+    .param .u32 stride_ym,
+    .param .u32 size,
     .param .u64 dummy_ptr1,
     .param .u64 dummy_ptr2
 )
 {
     // Registers
-    .reg .pred %p_full, %p0, %p1, %p2, %p3;
-    .reg .b32 %rN, %rTid, %rCta, %rBlockStart, %rBase, %rIdx0, %rIdx1, %rIdx2, %rIdx3;
-    .reg .b64 %rdX, %rdY, %rdOut, %rdAddr;
-    .reg .f32 %fx, %fy, %fo;
+    .reg .pred  pN, pM, p, pLoop;
+    .reg .u32   rTid, rPidM, rPidN, rSize, rStrideXm, rStrideYm;
+    .reg .u32   rN, rMBase, rIdxX, rIdxY, rMIndex, rIter, rTmp32, rTmp32Y;
+    .reg .u64   rXPtr, rYPtr, rAddrX, rAddrY, rOfsX, rOfsY;
+    .reg .f32   fScalar, fVal, fOut;
 
-    // Load parameters
-    ld.param.u64 %rdX, [x_ptr];
-    ld.param.u64 %rdY, [y_ptr];
-    ld.param.u64 %rdOut, [output_ptr];
-    ld.param.u32 %rN, [n_elements];
+    // Load kernel parameters
+    ld.param.u64 rXPtr,      [x_ptr];
+    ld.param.u64 rYPtr,      [output_ptr];
+    ld.param.f32 fScalar,    [scalar];
+    ld.param.u32 rStrideXm,  [stride_xm];
+    ld.param.u32 rStrideYm,  [stride_ym];
+    ld.param.u32 rSize,      [size];
 
-    // Thread/block indices
-    mov.u32 %rTid, %tid.x;
-    mov.u32 %rCta, %ctaid.x;
+    // Read CTA and thread indices
+    mov.u32 rPidM, %ctaid.x;
+    mov.u32 rPidN, %ctaid.y;
+    mov.u32 rTid,  %tid.x;
 
-    // block_start = blockIdx.x * 1024
-    mul.lo.u32 %rBlockStart, %rCta, 1024;
+    // Compute column index n = pid_n * BLOCK_N + tid.x  (BLOCK_N=128)
+    mul.lo.u32 rN, rPidN, 128;
+    add.u32    rN, rN, rTid;
 
-    // base = block_start + tid * 4
-    mad.lo.u32 %rBase, %rTid, 4, %rBlockStart;
+    // Column bounds check: if n >= size, nothing to do for this thread
+    setp.lt.u32 pN, rN, rSize;
+    @!pN ret;
 
-    // 4 consecutive indices
-    mov.u32 %rIdx0, %rBase;
-    add.u32 %rIdx1, %rBase, 1;
-    add.u32 %rIdx2, %rBase, 2;
-    add.u32 %rIdx3, %rBase, 3;
+    // Compute row base m_base = pid_m * BLOCK_M  (BLOCK_M=64)
+    mul.lo.u32 rMBase, rPidM, 64;
 
-    // Fast path if all 4 are in bounds
-    setp.lt.u32 %p_full, %rIdx3, %rN;
-    @%p_full bra L_full;
+    // Prepare initial flat indices for x and y: idx = m_base*stride + n
+    mul.lo.u32 rTmp32,  rMBase, rStrideXm;
+    add.u32    rIdxX,   rTmp32, rN;
+    mul.lo.u32 rTmp32Y, rMBase, rStrideYm;
+    add.u32    rIdxY,   rTmp32Y, rN;
 
-L_tail:
-    setp.lt.u32 %p0, %rIdx0, %rN;
-    @%p0 mad.wide.u32 %rdAddr, %rIdx0, 4, %rdX;
-    @%p0 ld.global.f32 %fx, [%rdAddr];
-    @%p0 mad.wide.u32 %rdAddr, %rIdx0, 4, %rdY;
-    @%p0 ld.global.f32 %fy, [%rdAddr];
-    @%p0 add.f32 %fo, %fx, %fy;
-    @%p0 mad.wide.u32 %rdAddr, %rIdx0, 4, %rdOut;
-    @%p0 st.global.f32 [%rdAddr], %fo;
+    // Initialize loop counters for BLOCK_M rows
+    mov.u32 rMIndex, rMBase;
+    mov.u32 rIter,   0;
 
-    setp.lt.u32 %p1, %rIdx1, %rN;
-    @%p1 mad.wide.u32 %rdAddr, %rIdx1, 4, %rdX;
-    @%p1 ld.global.f32 %fx, [%rdAddr];
-    @%p1 mad.wide.u32 %rdAddr, %rIdx1, 4, %rdY;
-    @%p1 ld.global.f32 %fy, [%rdAddr];
-    @%p1 add.f32 %fo, %fx, %fy;
-    @%p1 mad.wide.u32 %rdAddr, %rIdx1, 4, %rdOut;
-    @%p1 st.global.f32 [%rdAddr], %fo;
+L_loop:
+    // Mask combines row and column bounds: (m_index < size) & (n < size)
+    setp.lt.u32 pM, rMIndex, rSize;
+    and.pred p, pM, pN;
 
-    setp.lt.u32 %p2, %rIdx2, %rN;
-    @%p2 mad.wide.u32 %rdAddr, %rIdx2, 4, %rdX;
-    @%p2 ld.global.f32 %fx, [%rdAddr];
-    @%p2 mad.wide.u32 %rdAddr, %rIdx2, 4, %rdY;
-    @%p2 ld.global.f32 %fy, [%rdAddr];
-    @%p2 add.f32 %fo, %fx, %fy;
-    @%p2 mad.wide.u32 %rdAddr, %rIdx2, 4, %rdOut;
-    @%p2 st.global.f32 [%rdAddr], %fo;
+    // Compute address for x: addr_x = x_ptr + (idx_x * 4)
+    mul.wide.u32 rOfsX, rIdxX, 4;
+    add.s64      rAddrX, rXPtr, rOfsX;
 
-    setp.lt.u32 %p3, %rIdx3, %rN;
-    @%p3 mad.wide.u32 %rdAddr, %rIdx3, 4, %rdX;
-    @%p3 ld.global.f32 %fx, [%rdAddr];
-    @%p3 mad.wide.u32 %rdAddr, %rIdx3, 4, %rdY;
-    @%p3 ld.global.f32 %fy, [%rdAddr];
-    @%p3 add.f32 %fo, %fx, %fy;
-    @%p3 mad.wide.u32 %rdAddr, %rIdx3, 4, %rdOut;
-    @%p3 st.global.f32 [%rdAddr], %fo;
+    // Masked load with other=0.0
+    mov.f32 fVal, 0f00000000;
+    @p ld.global.f32 fVal, [rAddrX];
 
-    bra L_exit;
+    // Add scalar
+    add.f32 fOut, fVal, fScalar;
 
-L_full:
-    mad.wide.u32 %rdAddr, %rIdx0, 4, %rdX;
-    ld.global.f32 %fx, [%rdAddr];
-    mad.wide.u32 %rdAddr, %rIdx0, 4, %rdY;
-    ld.global.f32 %fy, [%rdAddr];
-    add.f32 %fo, %fx, %fy;
-    mad.wide.u32 %rdAddr, %rIdx0, 4, %rdOut;
-    st.global.f32 [%rdAddr], %fo;
+    // Compute address for y: addr_y = y_ptr + (idx_y * 4)
+    mul.wide.u32 rOfsY, rIdxY, 4;
+    add.s64      rAddrY, rYPtr, rOfsY;
 
-    mad.wide.u32 %rdAddr, %rIdx1, 4, %rdX;
-    ld.global.f32 %fx, [%rdAddr];
-    mad.wide.u32 %rdAddr, %rIdx1, 4, %rdY;
-    ld.global.f32 %fy, [%rdAddr];
-    add.f32 %fo, %fx, %fy;
-    mad.wide.u32 %rdAddr, %rIdx1, 4, %rdOut;
-    st.global.f32 [%rdAddr], %fo;
+    // Masked store
+    @p st.global.f32 [rAddrY], fOut;
 
-    mad.wide.u32 %rdAddr, %rIdx2, 4, %rdX;
-    ld.global.f32 %fx, [%rdAddr];
-    mad.wide.u32 %rdAddr, %rIdx2, 4, %rdY;
-    ld.global.f32 %fy, [%rdAddr];
-    add.f32 %fo, %fx, %fy;
-    mad.wide.u32 %rdAddr, %rIdx2, 4, %rdOut;
-    st.global.f32 [%rdAddr], %fo;
+    // Advance to next row
+    add.u32 rIdxX,   rIdxX,   rStrideXm;
+    add.u32 rIdxY,   rIdxY,   rStrideYm;
+    add.u32 rMIndex, rMIndex, 1;
+    add.u32 rIter,   rIter,   1;
 
-    mad.wide.u32 %rdAddr, %rIdx3, 4, %rdX;
-    ld.global.f32 %fx, [%rdAddr];
-    mad.wide.u32 %rdAddr, %rIdx3, 4, %rdY;
-    ld.global.f32 %fy, [%rdAddr];
-    add.f32 %fo, %fx, %fy;
-    mad.wide.u32 %rdAddr, %rIdx3, 4, %rdOut;
-    st.global.f32 [%rdAddr], %fo;
+    // Loop for BLOCK_M rows
+    setp.lt.u32 pLoop, rIter, 64;
+    @pLoop bra L_loop;
 
-L_exit:
+    // Done
     ret;
 }
 """,
-    "num_threads_x": 256,
-    "KERNEL_BLOCK_SIZE": 1024,
+    "BLOCK_M": 64,
+    "BLOCK_N": 128,
+    "num_threads_x": 128,
+    "num_threads_y": 1,
+    "num_threads_z": 1,
 }
 
 
@@ -172,21 +147,25 @@ def evaluate_config(
     benchmark_size: int,
 ) -> dict[str, Any]:
     report: dict[str, Any] = {
-        "kernel": "AddKernel",
+        "kernel": "MatrixScalarAdditionKernel",
         "config": {
+            "BLOCK_M": config.get("BLOCK_M"),
+            "BLOCK_N": config.get("BLOCK_N"),
             "num_threads_x": config.get("num_threads_x"),
-            "KERNEL_BLOCK_SIZE": config.get("KERNEL_BLOCK_SIZE"),
+            "num_threads_y": config.get("num_threads_y"),
+            "num_threads_z": config.get("num_threads_z"),
             "ptx_length": len(str(config.get("ptx", ""))),
         },
     }
 
-    compile_result = run_ptx_compilation(AddKernel, ptx_code=config)
+    compile_result = run_ptx_compilation(MatrixScalarAdditionKernel, ptx_code=config)
     report["compile"] = compile_result
     if not compile_result.get("success", False):
         return report
 
-    operator = AddKernel(
-        block_size=int(config.get("KERNEL_BLOCK_SIZE", 1024)),
+    operator = MatrixScalarAdditionKernel(
+        block_m=int(config.get("BLOCK_M", 64)),
+        block_n=int(config.get("BLOCK_N", 128)),
         ptx=config,
     )
 
@@ -208,7 +187,7 @@ def evaluate_config(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Manually evaluate a PTX kernel_config payload against AddKernel.",
+        description="Manually evaluate a PTX kernel_config payload against MatrixScalarAdditionKernel.",
     )
     parser.add_argument(
         "--verify-sizes",
