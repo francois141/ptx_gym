@@ -50,7 +50,10 @@ class MatrixAdditionKernel(TritonPTXKernel):
         size = x.shape[0]
         output = torch.empty_like(x)
 
-        grid = (triton.cdiv(size, self.block_m), triton.cdiv(size, self.block_n))
+        grid = lambda meta: (
+            triton.cdiv(size, meta["BLOCK_M"]),
+            triton.cdiv(size, meta["BLOCK_N"]),
+        )
         launch_kwargs = dict(BLOCK_M=self.block_m, BLOCK_N=self.block_n)
 
         if not ptx:

@@ -61,7 +61,10 @@ class MatrixMultiplicationKernel(TritonPTXKernel):
         a, b = inputs
         c = torch.empty((4096, 4096), device=a.device, dtype=a.dtype)
 
-        grid = (triton.cdiv(4096, self.block_m), triton.cdiv(4096, self.block_n))
+        grid = lambda meta: (
+            triton.cdiv(4096, meta["BLOCK_M"]),
+            triton.cdiv(4096, meta["BLOCK_N"]),
+        )
         launch_kwargs = dict(
             BLOCK_M=self.block_m,
             BLOCK_N=self.block_n,

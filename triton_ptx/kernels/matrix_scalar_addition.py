@@ -47,7 +47,10 @@ class MatrixScalarAdditionKernel(TritonPTXKernel):
 
         size = x.shape[0]
         output = torch.empty_like(x)
-        grid = (triton.cdiv(size, self.block_m), triton.cdiv(size, self.block_n))
+        grid = lambda meta: (
+            triton.cdiv(size, meta["BLOCK_M"]),
+            triton.cdiv(size, meta["BLOCK_N"]),
+        )
         launch_kwargs = dict(BLOCK_M=self.block_m, BLOCK_N=self.block_n)
 
         if not ptx:
@@ -68,11 +71,10 @@ class MatrixScalarAdditionKernel(TritonPTXKernel):
                 x.stride(0),
                 output.stride(0),
                 size,
-                **self.ptx_launch_kwargs(BLOCK_M=self.block_m, BLOCK_N=self.block_n),
+                **self.ptx_launch_kwargs(),
             )
         return output, kernel
 
     def forward_torch(self, inputs):
         x, scalar = inputs
         return x + scalar
-
