@@ -42,7 +42,7 @@ class MatrixMultiplicationKernel(TritonPTXKernel):
             k_remaining = k_dim - k_start * BLOCK_K
             a = tl.load(a_ptrs, mask=offs_k[None, :] < k_remaining, other=0.0)
             b = tl.load(b_ptrs, mask=offs_k[:, None] < k_remaining, other=0.0)
-            accumulator = tl.dot(a, b, accumulator)
+            accumulator = tl.dot(a, b, acc=accumulator, out_dtype=tl.float32, input_precision="ieee")
             a_ptrs += BLOCK_K
             b_ptrs += BLOCK_K * stride_bk
 
