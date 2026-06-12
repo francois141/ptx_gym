@@ -1,5 +1,4 @@
 import inspect
-import torch
 
 import ast
 import textwrap
@@ -29,32 +28,6 @@ def get_ptx_constexpr(ptx, name):
         raise KeyError(f"PTX payload is missing constexpr value: {name}")
     return get_ptx_constexprs(ptx).get(name)
 
-def print_kernel_source(kernel):
-    source = inspect.getsource(kernel.kernel)
-    print("\n--- Source Code ---")
-    print(source)
-
-    print("\n--- Argument List ---")
-    signature = inspect.signature(kernel.kernel)
-    for name, param in signature.parameters.items():
-        annotation_str = f", Annotation: {param.annotation.__qualname__}" if param.annotation is not inspect.Parameter.empty else ""
-        print(f"Argument: {name}, Default: {param.default if param.default is not inspect.Parameter.empty else 'None'}, Kind: {param.kind}{annotation_str}")
-
-def check_similarity(output1, output2, atol=3e-1, rtol=1e-1, verbose = False):
-    is_close = torch.allclose(output1, output2, atol=atol, rtol=rtol)
-
-    if not is_close:
-        # Calculate the absolute difference element-wise
-        diff = torch.abs(output1 - output2)
-        max_diff = torch.max(diff).item()
-        mean_diff = torch.mean(diff).item()
-
-        if verbose:
-            print(f"Outputs are not similar: {is_close}")
-            print(f"Max Difference: {max_diff:.3e}")
-            print(f"Mean Difference: {mean_diff:.3e}")
-
-    return is_close
 
 @dataclass(frozen=True)
 class KernelParameter:
@@ -199,15 +172,3 @@ def extract_specification_from_operator(operator):
         )
 
     return spec
-
-
-def discover_kernel_specs():
-    root = BASE_DIR.parent / "kernels"
-    specs = []
-
-    for path in sorted(root.glob("*.py")):
-        if path.name == "__init__.py":
-            continue
-
-        specs.append(extract_specification(path))
-    return specs

@@ -4,9 +4,11 @@ import math
 from pathlib import Path
 
 from triton_ptx.evaluation import EvaluatedCandidate
-from triton_ptx.helpers import get_ptx_constexprs
-from triton_ptx.helpers import extract_specification
-from triton_ptx.helpers import extract_specification_from_operator
+from triton_ptx.helpers.kernels import (
+    extract_specification,
+    extract_specification_from_operator,
+    get_ptx_constexprs,
+)
 from triton_ptx.prompts import (
     commenting_rules,
     correctness_rules,
@@ -232,10 +234,3 @@ def generate_prompts(
         written_files.append(path)
 
     return written_files
-
-
-def main():
-    generate_prompts()
-
-if __name__ == "__main__":
-    main()

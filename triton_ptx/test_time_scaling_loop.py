@@ -5,12 +5,11 @@ from datetime import datetime
 from pathlib import Path
 
 from triton_ptx.evaluation import TritonPTXCandidateEvaluator
-from triton_ptx.policy import select_winner
 from triton_ptx.generator import OpenAIPrompt
-from triton_ptx.helpers import JsonDatasetWriter
-from triton_ptx.helpers import dump_kernel_ptx
-from triton_ptx.helpers import get_ptx_system_config
-from triton_ptx.helpers import parse_ptx_signature
+from triton_ptx.helpers.environment import get_ptx_system_config
+from triton_ptx.helpers.ptx import parse_ptx_signature
+from triton_ptx.helpers.storage import JsonDatasetWriter
+from triton_ptx.helpers.triton import dump_kernel_ptx
 from triton_ptx.kernels import resolve_kernel
 from triton_ptx.prompts import build_prompt_for_operator
 from triton_ptx.prompts import build_follow_up_prompt_for_operator
@@ -38,16 +37,15 @@ def run_test_time_scaling_loop(
     rounds: int = 10,
     k: int = 3,
     max_retries: int = 3,
-    output_root: Path,
+    database_root: Path,
 ) -> Path:
 
     kernel_cls = resolve_kernel(kernel_name)
 
-    output_root = Path(output_root)
-    output_root.mkdir(parents=True, exist_ok=True)
+    database_root = Path(database_root)
+    database_root.mkdir(parents=True, exist_ok=True)
 
     # Keep an immutable per-run archive in database/<timestamp>.
-    database_root = output_root.parent / "database"
     run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_archive_root = database_root / run_timestamp
     run_archive_root.mkdir(parents=True, exist_ok=True)
@@ -55,14 +53,12 @@ def run_test_time_scaling_loop(
     print(f"Compiling baseline Triton PTX for {kernel_cls.__name__}")
     baseline_ptx = dump_kernel_ptx(kernel_cls())
     ptx_signature = parse_ptx_signature(baseline_ptx)
-    (output_root / "compiled_triton_kernel.ptx").write_text(baseline_ptx + "\n", encoding="utf-8")
     (run_archive_root / "compiled_triton_kernel.ptx").write_text(baseline_ptx + "\n", encoding="utf-8")
 
     prompter = OpenAIPrompt()
     evaluator = TritonPTXCandidateEvaluator(
         kernel_cls
     )
-    output_writer = JsonDatasetWriter(dataset_dir=output_root)
     archive_writer = JsonDatasetWriter(dataset_dir=run_archive_root)
 
     current_prompt = build_prompt_for_operator(
@@ -70,7 +66,6 @@ def run_test_time_scaling_loop(
         num_answers=k,
         ptx_signature=ptx_signature,
     )
-    (output_root / "initial_prompt.md").write_text(current_prompt + "\n", encoding="utf-8")
     (run_archive_root / "initial_prompt.md").write_text(current_prompt + "\n", encoding="utf-8")
 
     current_candidates = []
@@ -108,10 +103,6 @@ def run_test_time_scaling_loop(
                     f"repair_prompt_iteration_{round_index}"
                     f"_candidate_{index}_retry_{retry_index}.md"
                 )
-                (output_root / repair_prompt_name).write_text(
-                    repair_prompt + "\n",
-                    encoding="utf-8",
-                )
                 (run_archive_root / repair_prompt_name).write_text(
                     repair_prompt + "\n",
                     encoding="utf-8",
@@ -132,11 +123,9 @@ def run_test_time_scaling_loop(
 
             round_results.append(result)
 
-        output_writer.store(round_index, round_results)
         archive_writer.store(round_index, round_results)
 
         if repair_results:
-            output_writer.store(f"repairs_{round_index}", repair_results)
             archive_writer.store(f"repairs_{round_index}", repair_results)
 
         # Keep the best k only
@@ -144,8 +133,7 @@ def run_test_time_scaling_loop(
         current_candidates.sort()
         current_candidates = current_candidates[:k]
 
-        winner = select_winner(current_candidates)
-        output_writer.store(f"winner_{round_index}", [winner])
+        winner = sorted(current_candidates)[0]
         archive_writer.store(f"winner_{round_index}", [winner])
 
         follow_up_prompt = build_follow_up_prompt_for_operator(
@@ -155,14 +143,12 @@ def run_test_time_scaling_loop(
             ptx_signature=ptx_signature,
         )
 
-        follow_up_path = output_root / f"follow_up_iteration_{round_index}.md"
-        follow_up_path.write_text(follow_up_prompt + "\n", encoding="utf-8")
         archive_follow_up_path = run_archive_root / f"follow_up_iteration_{round_index}.md"
         archive_follow_up_path.write_text(follow_up_prompt + "\n", encoding="utf-8")
 
         current_prompt = follow_up_prompt
 
-    return output_root
+    return run_archive_root
 
 
 def parse_args() -> argparse.Namespace:
@@ -181,10 +167,10 @@ def parse_args() -> argparse.Namespace:
         help="Maximum isolated repair attempts per failed candidate.",
     )
     parser.add_argument(
-        "--output-dir",
+        "--database-dir",
         type=Path,
-        default="output",
-        help="Root directory where run artifacts will be written.",
+        default="database",
+        help="Root directory where archived run artifacts will be written.",
     )
     parser.add_argument("--keep-cache", action="store_true", help="Keep the Triton cache between candidates.")
     parser.add_argument("--version", default=default_version, help="PTX ISA version to request in prompts.")
@@ -214,7 +200,7 @@ def main() -> None:
         rounds=args.rounds,
         k=args.k,
         max_retries=args.max_retries,
-        output_root=args.output_dir,
+        database_root=args.database_dir,
     )
 
 

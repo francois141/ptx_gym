@@ -3,8 +3,9 @@ import argparse
 from pathlib import Path
 
 
+from triton_ptx.helpers.environment import is_gpu_available
+from triton_ptx.helpers.triton import dump_kernel_ptx
 from triton_ptx.kernels import kernel_list
-from triton_ptx.helpers import is_gpu_available, dump_kernel_ptx
 
 
 def dump_and_save_ptx_kernel(kernel, output_dir: Path) -> Path:

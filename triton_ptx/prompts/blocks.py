@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from triton_ptx.helpers import PTXSignatureParameter
-from triton_ptx.helpers import parse_ptx_signature
 
 def format_argument_list(parameters):
     if not parameters:

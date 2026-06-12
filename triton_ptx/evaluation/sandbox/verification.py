@@ -3,7 +3,7 @@ import inspect
 import random
 
 import torch
-from triton_ptx.helpers import has_ptx_code
+from triton_ptx.helpers.kernels import has_ptx_code
 
 
 class BaseVerifier(ABC):

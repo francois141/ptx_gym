@@ -1,6 +1,6 @@
 from openai import OpenAI
 
-from triton_ptx.generator import ResponseGenerator, parse_response_text
+from .base import ResponseGenerator, parse_response_text
 
 
 class OpenAIPrompt(ResponseGenerator):

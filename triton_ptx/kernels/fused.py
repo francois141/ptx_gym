@@ -2,7 +2,6 @@ import torch
 import triton
 import triton.language as tl
 
-from triton_ptx.helpers import jit_fixed_parameters
 from triton_ptx.kernels.base import TritonPTXKernel
 
 class FancyFusedKernel(TritonPTXKernel):

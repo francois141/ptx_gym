@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import torch
 import triton
 
-from triton_ptx.helpers import clear_triton_cache
+from triton_ptx.helpers.triton import clear_triton_cache
 
 
 @dataclass(frozen=True)

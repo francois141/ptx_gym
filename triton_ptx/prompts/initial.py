@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from triton_ptx.helpers import (
+from triton_ptx.helpers.kernels import (
     extract_specification,
     extract_specification_from_operator,
 )
@@ -86,9 +86,3 @@ def generate_prompts(*, num_answers=3):
         written_files.append(path)
 
     return written_files
-
-def main():
-    generate_prompts()
-
-if __name__ == "__main__":
-    main()

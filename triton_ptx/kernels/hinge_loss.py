@@ -2,7 +2,7 @@ import torch
 import triton
 import triton.language as tl
 
-from triton_ptx.helpers import get_ptx_constexpr, jit_fixed_parameters
+from triton_ptx.helpers.kernels import get_ptx_constexpr
 from triton_ptx.kernels.base import TritonPTXKernel
 
 class HingeLossKernel(TritonPTXKernel):

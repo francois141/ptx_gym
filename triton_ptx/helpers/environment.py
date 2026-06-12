@@ -94,11 +94,3 @@ def _guess_ptx_version_from_cuda(cuda_version: str | None) -> str:
         )
 
     return ptx_mapping[key]
-
-
-if __name__ == "__main__":
-    version, target, address_size = get_ptx_system_config()
-
-    print(version)
-    print(target)
-    print(address_size)

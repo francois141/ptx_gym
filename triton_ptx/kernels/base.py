@@ -5,7 +5,8 @@ from typing import Any
 
 import torch
 
-from triton_ptx.helpers import get_ptx_code, has_ptx_code, jit_fixed_parameters
+from triton_ptx.helpers.kernels import get_ptx_code, has_ptx_code
+from triton_ptx.helpers.triton import jit_fixed_parameters
 
 
 class TritonPTXKernel(ABC):

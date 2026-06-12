@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from triton_ptx.helpers import clear_triton_cache
+from triton_ptx.helpers.triton import clear_triton_cache
 from triton_ptx.evaluation.sandbox import (
     OutputVerifier,
     PTXBenchmarkRunner,

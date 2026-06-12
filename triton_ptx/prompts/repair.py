@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 from triton_ptx.evaluation import EvaluatedCandidate
-from triton_ptx.helpers import extract_specification_from_operator
+from triton_ptx.helpers.kernels import extract_specification_from_operator
 from triton_ptx.prompts.blocks import (
     commenting_rules,
     correctness_rules,
