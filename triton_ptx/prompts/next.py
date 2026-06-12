@@ -124,6 +124,7 @@ def prompt_builder(
     target: str = "sm_89",
     address_size: int = 64,
     num_answers: int = 5,
+    ptx_signature=None,
 ) -> str:
     sections = [
         follow_up_task().strip(),
@@ -139,6 +140,7 @@ def prompt_builder(
             target=target,
             address_size=address_size,
             kernel_name=spec.kernel_name,
+            ptx_signature=ptx_signature,
         ),
         correctness_rules(),
         commenting_rules(),
@@ -167,6 +169,7 @@ def build_follow_up_prompt_for_path(
     target: str = "sm_89",
     address_size: int = 64,
     num_answers: int = 5,
+    ptx_signature=None,
 ):
     spec = extract_specification(path)
     return spec.operator_name, prompt_builder(
@@ -176,6 +179,7 @@ def build_follow_up_prompt_for_path(
         target=target,
         address_size=address_size,
         num_answers=num_answers,
+        ptx_signature=ptx_signature,
     )
 
 
@@ -187,6 +191,7 @@ def build_follow_up_prompt_for_operator(
     target: str = "sm_89",
     address_size: int = 64,
     num_answers: int = 5,
+    ptx_signature=None,
 ):
     spec = extract_specification_from_operator(operator_cls)
     return prompt_builder(
@@ -196,6 +201,7 @@ def build_follow_up_prompt_for_operator(
         target=target,
         address_size=address_size,
         num_answers=num_answers,
+        ptx_signature=ptx_signature,
     )
 
 

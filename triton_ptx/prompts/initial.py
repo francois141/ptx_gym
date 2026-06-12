@@ -28,6 +28,7 @@ def prompt_builder(
     target="sm_89",
     address_size=64,
     num_answers=5,
+    ptx_signature=None,
 ):
     sections = [
         initial_task().strip(),
@@ -43,6 +44,7 @@ def prompt_builder(
             target=target,
             address_size=address_size,
             kernel_name=spec.kernel_name,
+            ptx_signature=ptx_signature,
         ),
         correctness_rules(),
         commenting_rules(),
@@ -66,9 +68,9 @@ def build_prompt_for_path(path, *, num_answers=5):
     return spec.operator_name, prompt_builder(spec, num_answers=num_answers)
 
 
-def build_prompt_for_operator(operator, *, num_answers=5):
+def build_prompt_for_operator(operator, *, num_answers=5, ptx_signature=None):
     spec = extract_specification_from_operator(operator)
-    return prompt_builder(spec, num_answers=num_answers)
+    return prompt_builder(spec, num_answers=num_answers, ptx_signature=ptx_signature)
 
 
 def generate_prompts(*, num_answers=3):

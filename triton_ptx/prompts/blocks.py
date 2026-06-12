@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from triton_ptx.helpers import PTXSignatureParameter
+from triton_ptx.helpers import parse_ptx_signature
 
 def format_argument_list(parameters):
     if not parameters:
@@ -82,42 +84,12 @@ def _is_constexpr_annotation(annotation) -> bool:
         or ("triton.language" in annotation_text and "constexpr" in annotation_text)
     )
 
-
-def _infer_ptx_param_type(param_name: str, annotation) -> str:
-    annotation_text = str(annotation).lower()
-    name = str(param_name).lower()
-
-    if "ptr" in name or "pointer" in name:
-        return ".u64"
-
-    if any(token in annotation_text for token in ("float16", "float32", "float64", "fp16", "fp32", "fp64", "f16", "f32", "f64")):
-        if "16" in annotation_text:
-            return ".f16"
-        if "64" in annotation_text:
-            return ".f64"
-        return ".f32"
-
-    if any(token in annotation_text for token in ("int64", "uint64", "i64", "u64")):
-        return ".u64"
-    if any(token in annotation_text for token in ("int16", "uint16", "i16", "u16")):
-        return ".u16"
-    if any(token in annotation_text for token in ("int8", "uint8", "i8", "u8")):
-        return ".u8"
-    if any(token in annotation_text for token in ("int32", "uint32", "i32", "u32")):
-        return ".u32"
-
-    if any(token in name for token in ("stride", "offset", "size", "num", "index", "idx", "shape", "dim")):
-        return ".u64"
-
-    return ".u32"
-
-
-def signature_template(parameters, *, version, target, address_size, kernel_name="kernel"):
+def signature_template(parameters, *, version, target, address_size, kernel_name="kernel", ptx_signature=None):
     runtime_params = [param for param in parameters if not _is_constexpr_annotation(param.annotation)]
 
     lines = []
-    for param in runtime_params:
-        lines.append(f"    .param {_infer_ptx_param_type(param.name, param.annotation)} {param.name},")
+    for index, param in enumerate(runtime_params):
+        lines.append(f"    .param {ptx_signature[index].ptx_type} {param.name},")
 
     lines.append("    .param .u64 dummy_ptr1,")
     lines.append("    .param .u64 dummy_ptr2")

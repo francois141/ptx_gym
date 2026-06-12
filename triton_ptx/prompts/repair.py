@@ -49,6 +49,7 @@ def prompt_builder(
     version: str = "8.7",
     target: str = "sm_89",
     address_size: int = 64,
+    ptx_signature=None,
 ) -> str:
     sections = [
         repair_task(retry_index, max_retries),
@@ -64,6 +65,7 @@ def prompt_builder(
             target=target,
             address_size=address_size,
             kernel_name=spec.kernel_name,
+            ptx_signature=ptx_signature,
         ),
         correctness_rules(),
         commenting_rules(),
@@ -84,6 +86,7 @@ def build_repair_prompt_for_operator(
     version: str = "8.7",
     target: str = "sm_89",
     address_size: int = 64,
+    ptx_signature=None,
 ) -> str:
     spec = extract_specification_from_operator(operator_cls)
     return prompt_builder(
@@ -94,4 +97,5 @@ def build_repair_prompt_for_operator(
         version=version,
         target=target,
         address_size=address_size,
+        ptx_signature=ptx_signature,
     )

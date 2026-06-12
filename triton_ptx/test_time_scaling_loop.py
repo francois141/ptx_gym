@@ -8,12 +8,13 @@ from triton_ptx.evaluation import TritonPTXCandidateEvaluator
 from triton_ptx.policy import select_winner
 from triton_ptx.generator import OpenAIPrompt
 from triton_ptx.helpers import JsonDatasetWriter
+from triton_ptx.helpers import dump_kernel_ptx
 from triton_ptx.helpers import get_ptx_system_config
+from triton_ptx.helpers import parse_ptx_signature
 from triton_ptx.kernels import resolve_kernel
 from triton_ptx.prompts import build_prompt_for_operator
 from triton_ptx.prompts import build_follow_up_prompt_for_operator
 from triton_ptx.prompts import build_repair_prompt_for_operator
-
 
 def needs_compile_or_verification_retry(candidate) -> bool:
     if not candidate.compiles:
@@ -51,6 +52,12 @@ def run_test_time_scaling_loop(
     run_archive_root = database_root / run_timestamp
     run_archive_root.mkdir(parents=True, exist_ok=True)
 
+    print(f"Compiling baseline Triton PTX for {kernel_cls.__name__}")
+    baseline_ptx = dump_kernel_ptx(kernel_cls())
+    ptx_signature = parse_ptx_signature(baseline_ptx)
+    (output_root / "compiled_triton_kernel.ptx").write_text(baseline_ptx + "\n", encoding="utf-8")
+    (run_archive_root / "compiled_triton_kernel.ptx").write_text(baseline_ptx + "\n", encoding="utf-8")
+
     prompter = OpenAIPrompt()
     evaluator = TritonPTXCandidateEvaluator(
         kernel_cls
@@ -58,7 +65,11 @@ def run_test_time_scaling_loop(
     output_writer = JsonDatasetWriter(dataset_dir=output_root)
     archive_writer = JsonDatasetWriter(dataset_dir=run_archive_root)
 
-    current_prompt = build_prompt_for_operator(kernel_cls, num_answers=k)
+    current_prompt = build_prompt_for_operator(
+        kernel_cls,
+        num_answers=k,
+        ptx_signature=ptx_signature,
+    )
     (output_root / "initial_prompt.md").write_text(current_prompt + "\n", encoding="utf-8")
     (run_archive_root / "initial_prompt.md").write_text(current_prompt + "\n", encoding="utf-8")
 
@@ -90,6 +101,7 @@ def run_test_time_scaling_loop(
                     kernel_cls,
                     retry_index=retry_index,
                     max_retries=max_retries,
+                    ptx_signature=ptx_signature,
                 )
 
                 repair_prompt_name = (
@@ -140,6 +152,7 @@ def run_test_time_scaling_loop(
             current_candidates,
             kernel_cls,
             num_answers=k,
+            ptx_signature=ptx_signature,
         )
 
         follow_up_path = output_root / f"follow_up_iteration_{round_index}.md"
