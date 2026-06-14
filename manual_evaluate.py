@@ -11,7 +11,7 @@ from triton_ptx.evaluation.sandbox import (
     PTXBenchmarkRunner,
     run_ptx_compilation,
 )
-from triton_ptx.kernels.matrix_scalar_addition import MatrixScalarAdditionKernel
+from triton_ptx.kernels.level2.matrix_scalar_addition import MatrixScalarAdditionKernel
 
 
 kernel_config = {

@@ -70,6 +70,8 @@ def run_test_time_scaling_loop(
 
     current_candidates = []
 
+    return 0
+
     for round_index in range(1, rounds + 1):
         print(f"=== Iteration {round_index} ===")
         answers = prompter.generate_response(current_prompt, num_answers=k)
