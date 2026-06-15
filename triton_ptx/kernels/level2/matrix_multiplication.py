@@ -68,11 +68,6 @@ class MatrixMultiplicationKernel(TritonPTXKernel):
             triton.cdiv(4096, meta["BLOCK_M"]),
             triton.cdiv(4096, meta["BLOCK_N"]),
         )
-        launch_kwargs = dict(
-            BLOCK_M=self.block_m,
-            BLOCK_N=self.block_n,
-            BLOCK_K=self.block_k,
-        )
 
         if not ptx:
             kernel = self.compiled_kernel[grid](
@@ -83,7 +78,9 @@ class MatrixMultiplicationKernel(TritonPTXKernel):
                 b.stride(0),
                 c.stride(0),
                 a.shape[1],
-                **launch_kwargs,
+                BLOCK_M=self.block_m,
+                BLOCK_N=self.block_n,
+                BLOCK_K=self.block_k,
                 num_warps=self.num_warps,
             )
         else:
