@@ -1,7 +1,67 @@
 from __future__ import annotations
 
 import ctypes
+from pathlib import Path
+import re
+import subprocess
+
 import torch
+
+
+_PTXAS_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "third_party"
+    / "nvidia"
+    / "backend"
+    / "bin"
+    / "ptxas"
+)
+
+
+def _cuda_release_to_ptx_version(cuda_version: str) -> str:
+    """Map a CUDA toolkit release string like ``12.8`` to a PTX ISA version."""
+    try:
+        major, minor = map(int, cuda_version.split(".")[:2])
+    except (ValueError, IndexError) as exc:
+        raise ValueError(
+            f"Invalid CUDA version format: {cuda_version!r}"
+        ) from exc
+
+    ptx_mapping: dict[tuple[int, int], str] = {
+        (11, 0): "7.0",
+        (11, 1): "7.1",
+        (11, 2): "7.2",
+        (11, 3): "7.4",
+        (11, 4): "7.4",
+        (11, 5): "7.5",
+        (11, 6): "7.6",
+        (11, 7): "7.7",
+        (11, 8): "7.8",
+        (12, 0): "8.0",
+        (12, 1): "8.1",
+        (12, 2): "8.2",
+        (12, 3): "8.3",
+        (12, 4): "8.4",
+        (12, 5): "8.5",
+        (12, 6): "8.5",
+        (12, 7): "8.6",
+        (12, 8): "8.7",
+        (13, 0): "9.0",
+        (13, 1): "9.1",
+        (13, 2): "9.2",
+    }
+
+    key = (major, minor)
+    if key not in ptx_mapping:
+        supported = ", ".join(
+            f"{maj}.{min_}" for maj, min_ in sorted(ptx_mapping)
+        )
+        raise ValueError(
+            f"Unsupported CUDA version: {cuda_version}. "
+            f"Supported versions: {supported}"
+        )
+
+    return ptx_mapping[key]
 
 
 def is_gpu_available() -> bool:
@@ -34,63 +94,28 @@ def get_ptx_system_config() -> tuple[str, str, int]:
 
 def _guess_ptx_version_from_cuda(cuda_version: str | None) -> str:
     """
-    Map CUDA toolkit versions to PTX ISA versions.
+    Run the bundled ``ptxas --version`` command and map its CUDA release
+    to a PTX ISA version.
 
     Raises:
-        RuntimeError: If CUDA version is unavailable.
-        ValueError: If CUDA version is not explicitly supported.
+        RuntimeError: If ``ptxas`` cannot be executed or its version cannot be parsed.
+        ValueError: If the detected CUDA release is not explicitly supported.
     """
-    if cuda_version is None:
-        raise RuntimeError(
-            "Unable to determine CUDA version from torch.version.cuda."
-        )
-
     try:
-        major, minor = map(int, cuda_version.split(".")[:2])
-    except (ValueError, IndexError) as exc:
-        raise ValueError(
-            f"Invalid CUDA version format: {cuda_version!r}"
+        output = subprocess.check_output(
+            [str(_PTXAS_PATH), "--version"],
+            stderr=subprocess.STDOUT,
+        ).decode("utf-8")
+    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+        raise RuntimeError(
+            f"Unable to determine PTX version from {_PTXAS_PATH}."
         ) from exc
 
-    # CUDA Toolkit -> PTX ISA mapping
-    ptx_mapping: dict[tuple[int, int], str] = {
-        # CUDA 11.x → PTX 7.x
-        (11, 0): "7.0",
-        (11, 1): "7.1",
-        (11, 2): "7.2",
-        (11, 3): "7.4",
-        (11, 4): "7.4",
-        (11, 5): "7.5",
-        (11, 6): "7.6",
-        (11, 7): "7.7",
-        (11, 8): "7.8",
-
-        # CUDA 12.x → PTX 8.x
-        (12, 0): "8.0",
-        (12, 1): "8.1",
-        (12, 2): "8.2",
-        (12, 3): "8.3",
-        (12, 4): "8.4",
-        (12, 5): "8.5",
-        (12, 6): "8.5",
-        (12, 7): "8.6",
-        (12, 8): "8.7",
-
-        # CUDA 13.x → PTX 9.x
-        (13, 0): "9.0",
-        (13, 1): "9.1",
-        (13, 2): "9.2",
-    }
-
-    key = (major, minor)
-
-    if key not in ptx_mapping:
-        supported = ", ".join(
-            f"{maj}.{min_}" for maj, min_ in sorted(ptx_mapping)
-        )
-        raise ValueError(
-            f"Unsupported CUDA version: {cuda_version}. "
-            f"Supported versions: {supported}"
+    match = re.search(r"release\s+(\d+\.\d+)", output)
+    if match is None:
+        raise RuntimeError(
+            "Unable to parse CUDA release from ptxas --version output."
         )
 
-    return ptx_mapping[key]
+    detected_cuda_version = match.group(1)
+    return _cuda_release_to_ptx_version(detected_cuda_version)
