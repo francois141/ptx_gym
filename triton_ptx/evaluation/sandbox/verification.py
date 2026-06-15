@@ -13,7 +13,7 @@ class BaseVerifier(ABC):
 
 
 class OutputVerifier(BaseVerifier):
-    MAX_VALUES = 2 * 10**7
+    MAX_VALUES = 5 * 10**7
 
     def __init__(
         self,
