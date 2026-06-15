@@ -30,14 +30,18 @@ class TritonPTXKernel(ABC):
             raise RuntimeError(f"{type(self).__name__} has PTX code but no compiled PTX kernel.")
         return self.compiled_kernel_ptx
 
-    def ptx_launch_kwargs(self) -> dict[str, Any]:
+    def ptx_launch_kwargs(self, **kwargs) -> dict[str, Any]:
+        launch_kwargs = dict(kwargs)
         if not isinstance(getattr(self, "ptx", None), dict):
-            return {}
-        return {
+            return launch_kwargs
+        launch_kwargs.update(
+            {
             key: self.ptx[key]
             for key in ("num_threads_x", "num_threads_y", "num_threads_z")
             if self.ptx.get(key) is not None
-        }
+            }
+        )
+        return launch_kwargs
 
     @staticmethod
     @abstractmethod

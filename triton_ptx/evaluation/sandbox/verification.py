@@ -56,16 +56,31 @@ class OutputVerifier(BaseVerifier):
         return 0
 
     def _same(self, actual, expected):
-        return (
-            actual.shape == expected.shape
-            and torch.allclose(
-                actual,
-                expected.to(actual.dtype),
-                rtol=self.rtol,
-                atol=self.atol,
-                equal_nan=True,
+        if isinstance(actual, torch.Tensor) and isinstance(expected, torch.Tensor):
+            return (
+                actual.shape == expected.shape
+                and torch.allclose(
+                    actual,
+                    expected.to(actual.dtype),
+                    rtol=self.rtol,
+                    atol=self.atol,
+                    equal_nan=True,
+                )
             )
-        )
+
+        if isinstance(actual, (list, tuple)) and isinstance(expected, (list, tuple)):
+            return len(actual) == len(expected) and all(
+                self._same(actual_item, expected_item)
+                for actual_item, expected_item in zip(actual, expected)
+            )
+
+        if isinstance(actual, dict) and isinstance(expected, dict):
+            return actual.keys() == expected.keys() and all(
+                self._same(actual[key], expected[key])
+                for key in actual
+            )
+
+        return actual == expected
 
     def _bad_indices(self, actual, expected):
         expected = expected.to(actual.dtype)
