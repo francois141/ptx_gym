@@ -52,6 +52,19 @@ from .level2 import (
     MaxPool3dWithIndicesKernel,
     RMSNormKernel,
 )
+from .level3 import (
+    Conv2dMishMishKernel,
+    Conv2dReLUBiasKernel,
+    Conv3dReLULeakyReLUGELUSigmoidBiasKernel,
+    ConvTranspose2dAddClampScaleClampDivideKernel,
+    ConvTranspose2dSubTanhKernel,
+    LinearDivideSumScaleKernel,
+    LinearMulLeakyReLUKernel,
+    LinearReLUDivideKernel,
+    LinearScaleBatchNormKernel,
+    LinearSigmoidSumKernel,
+    LinearSwishDivideClampTanhClampKernel,
+)
 
 def available_kernels() -> dict[str, type]:
     return {operator.__name__: operator for operator in kernel_list}
@@ -69,7 +82,12 @@ kernel_list = [
     AvgPool1dKernel,
     AvgPool2dKernel,
     AvgPool3dKernel,
+    Conv2dMishMishKernel,
     Conv2dKernel,
+    Conv2dReLUBiasKernel,
+    Conv3dReLULeakyReLUGELUSigmoidBiasKernel,
+    ConvTranspose2dAddClampScaleClampDivideKernel,
+    ConvTranspose2dSubTanhKernel,
     AddKernel,
     ArgmaxKernel,
     ArgminKernel,
@@ -92,6 +110,12 @@ kernel_list = [
     MatrixMultiplicationKernel,
     MatrixScalarAdditionKernel,
     MatrixVectorMultiplicationKernel,
+    LinearDivideSumScaleKernel,
+    LinearMulLeakyReLUKernel,
+    LinearReLUDivideKernel,
+    LinearScaleBatchNormKernel,
+    LinearSigmoidSumKernel,
+    LinearSwishDivideClampTanhClampKernel,
     MaxPool1dKernel,
     MaxPool1dWithIndicesKernel,
     MaxPool2dKernel,
