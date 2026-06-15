@@ -9,7 +9,7 @@ class AddKernel(TritonPTXKernel):
 
     def __init__(self, *, block_size=1024, num_warps=4, ptx=None):
         self.block_size = block_size
-        self.constexpr_values = {"KERNEL_BLOCK_SIZE": block_size}
+        self.constexpr_values = {"BLOCK_SIZE": block_size}
         self.num_warps = num_warps
         self.init_compiled_kernels(ptx=ptx)
 
@@ -19,11 +19,11 @@ class AddKernel(TritonPTXKernel):
         y_ptr,
         output_ptr,
         n_elements,
-        KERNEL_BLOCK_SIZE: tl.constexpr,
+        BLOCK_SIZE: tl.constexpr,
     ):
         pid = tl.program_id(axis=0)
-        block_start = pid * KERNEL_BLOCK_SIZE
-        offsets = block_start + tl.arange(0, KERNEL_BLOCK_SIZE)
+        block_start = pid * BLOCK_SIZE
+        offsets = block_start + tl.arange(0, BLOCK_SIZE)
         mask = offsets < n_elements
 
         x = tl.load(x_ptr + offsets, mask=mask)
@@ -40,11 +40,11 @@ class AddKernel(TritonPTXKernel):
         x, y = inputs
         n_elements = x.numel()
         output = torch.empty_like(x)
-        grid = lambda meta: (triton.cdiv(n_elements, meta["KERNEL_BLOCK_SIZE"]),)
+        grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
         if not ptx:
             kernel = self.compiled_kernel[grid](
-                x, y, output, n_elements, KERNEL_BLOCK_SIZE=self.block_size,
+                x, y, output, n_elements, BLOCK_SIZE=self.block_size,
                 num_warps=self.num_warps,
             )
         else:
@@ -53,7 +53,7 @@ class AddKernel(TritonPTXKernel):
                 y,
                 output,
                 n_elements,
-                KERNEL_BLOCK_SIZE=self.block_size,
+                BLOCK_SIZE=self.block_size,
                 **self.ptx_launch_kwargs(),
             )
         return output, kernel

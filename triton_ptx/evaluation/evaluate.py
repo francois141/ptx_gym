@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from triton_ptx.helpers.kernels import instantiate_operator
 from triton_ptx.helpers.triton import clear_triton_cache
 from triton_ptx.evaluation.sandbox import (
     OutputVerifier,
@@ -245,7 +246,7 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
             )
 
         try:
-            operator = self.operator_cls(ptx=payload)
+            operator = instantiate_operator(self.operator_cls, payload)
             verifier = OutputVerifier()
             correct = verifier.verify(operator)
             verifier_report = getattr(verifier, "last_report", {})

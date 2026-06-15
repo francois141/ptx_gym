@@ -44,6 +44,56 @@ def get_ptx_constexpr(ptx, name, default=None):
     return get_ptx_extra_payload_keys(ptx).get(name, default)
 
 
+def build_operator_init_kwargs(operator_cls, ptx):
+    kwargs = {}
+    if not isinstance(ptx, dict):
+        return kwargs
+
+    payload = {
+        str(key).lower(): value
+        for key, value in ptx.items()
+        if value is not None
+    }
+
+    aliases = {
+        "block_size": ("block_size", ),
+        "kernel_size": ("kernel_size",),
+        "stride": ("stride",),
+        "padding": ("padding",),
+        "dilation": ("dilation",),
+        "num_warps": ("num_warps",),
+        "return_indices": ("return_indices",),
+        "ceil_mode": ("ceil_mode",),
+        "block_m": ("block_m",),
+        "block_n": ("block_n",),
+        "block_k": ("block_k",),
+        "rows": ("rows",),
+        "cols": ("cols",),
+    }
+
+    signature = inspect.signature(operator_cls.__init__)
+    for name, param in signature.parameters.items():
+        if name in ("self", "ptx"):
+            continue
+        if param.kind not in (
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.KEYWORD_ONLY,
+        ):
+            continue
+
+        candidate_keys = aliases.get(name, (name,))
+        for key in candidate_keys:
+            if key in payload:
+                kwargs[name] = payload[key]
+                break
+
+    return kwargs
+
+
+def instantiate_operator(operator_cls, ptx):
+    return operator_cls(ptx=ptx, **build_operator_init_kwargs(operator_cls, ptx))
+
+
 @dataclass(frozen=True)
 class KernelParameter:
     name: str

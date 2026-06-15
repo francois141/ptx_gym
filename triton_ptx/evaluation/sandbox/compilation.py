@@ -6,6 +6,8 @@ from abc import ABC, abstractmethod
 import contextlib
 import io
 
+from triton_ptx.helpers.kernels import instantiate_operator
+
 
 class CompilationRunnerBase(ABC):
     def __init__(self, kernel, ptx_code):
@@ -15,7 +17,7 @@ class CompilationRunnerBase(ABC):
         self.ptx_code = ptx_code
 
     def create_kernel(self):
-        return self.kernel(ptx=self.ptx_code)
+        return instantiate_operator(self.kernel, self.ptx_code)
 
     @abstractmethod
     def run(self):
