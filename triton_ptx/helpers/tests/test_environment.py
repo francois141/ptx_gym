@@ -16,7 +16,7 @@ Cuda compilation tools, release 12.8, V12.8.93
         lambda *args, **kwargs: mock_output.encode("utf-8"),
     )
 
-    assert environment._guess_ptx_version_from_cuda("12.1") == "8.7"
+    assert environment._guess_ptx_version_from_ptxas() == "8.7"
 
 
 @pytest.mark.skipif(

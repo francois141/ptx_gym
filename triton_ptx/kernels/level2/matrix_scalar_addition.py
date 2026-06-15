@@ -54,7 +54,6 @@ class MatrixScalarAdditionKernel(TritonPTXKernel):
             triton.cdiv(size, meta["BLOCK_M"]),
             triton.cdiv(size, meta["BLOCK_N"]),
         )
-        launch_kwargs = dict(BLOCK_M=self.block_m, BLOCK_N=self.block_n)
 
         if not ptx:
             kernel = self.compiled_kernel[grid](
@@ -64,7 +63,8 @@ class MatrixScalarAdditionKernel(TritonPTXKernel):
                 x.stride(0),
                 output.stride(0),
                 size,
-                **launch_kwargs,
+                BLOCK_M=self.block_m, 
+                BLOCK_N=self.block_n,
                 num_warps=self.num_warps,
             )
         else:

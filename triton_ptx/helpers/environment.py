@@ -66,10 +66,7 @@ def _cuda_release_to_ptx_version(cuda_version: str) -> str:
 
 def is_gpu_available() -> bool:
     """Return True if a CUDA-capable GPU is available, otherwise False."""
-    try:
-        return torch.cuda.is_available()
-    except ImportError:
-        return False
+    return torch.cuda.is_available()
 
 
 def get_ptx_system_config() -> tuple[str, str, int]:
@@ -87,12 +84,12 @@ def get_ptx_system_config() -> tuple[str, str, int]:
 
     address_size = ctypes.sizeof(ctypes.c_void_p) * 8
 
-    version = _guess_ptx_version_from_cuda(torch.version.cuda)
+    version = _guess_ptx_version_from_ptxas()
 
     return version, target, address_size
 
 
-def _guess_ptx_version_from_cuda(cuda_version: str | None) -> str:
+def _guess_ptx_version_from_ptxas() -> str:
     """
     Run the bundled ``ptxas --version`` command and map its CUDA release
     to a PTX ISA version.
