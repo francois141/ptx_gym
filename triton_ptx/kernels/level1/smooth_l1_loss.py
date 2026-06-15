@@ -6,9 +6,12 @@ from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class SmoothL1LossKernel(TritonPTXKernel):
-    def __init__(self, beta=1.0, block_size=1024, ptx=None):
+
+    def __init__(self, beta=1.0, block_size=1024, num_warps=4, ptx=None):
         self.beta = beta
         self.block_size = block_size
+        self.constexpr_values = {"BLOCK_SIZE": block_size}
+        self.num_warps = num_warps
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
@@ -33,7 +36,7 @@ class SmoothL1LossKernel(TritonPTXKernel):
         accum = torch.zeros((), device=pred.device, dtype=pred.dtype)
         grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
         if not ptx:
-            kernel = self.compiled_kernel[grid](pred, target, accum, n_elements, self.beta, BLOCK_SIZE=self.block_size)
+            kernel = self.compiled_kernel[grid](pred, target, accum, n_elements, self.beta, BLOCK_SIZE=self.block_size, num_warps=self.num_warps,)
         else:
             kernel = self.require_compiled_ptx()[grid](
                 pred,
@@ -41,6 +44,7 @@ class SmoothL1LossKernel(TritonPTXKernel):
                 accum,
                 n_elements,
                 self.beta,
+                BLOCK_SIZE=self.block_size,
                 **self.ptx_launch_kwargs(),
             )
         return accum / n_elements, kernel

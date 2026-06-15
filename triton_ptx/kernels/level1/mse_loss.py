@@ -5,8 +5,11 @@ import triton.language as tl
 from triton_ptx.kernels.base import TritonPTXKernel
 
 class MSELossKernel(TritonPTXKernel):
-    def __init__(self, block_size=1024, ptx=None):
+
+    def __init__(self, block_size=1024, num_warps=4, ptx=None):
         self.block_size = block_size
+        self.constexpr_values = {"BLOCK_SIZE": block_size}
+        self.num_warps = num_warps
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
@@ -33,7 +36,7 @@ class MSELossKernel(TritonPTXKernel):
         grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
         if not ptx:
-            kernel = self.compiled_kernel[grid](p, t, res, loss, n_elements, BLOCK_SIZE=self.block_size)
+            kernel = self.compiled_kernel[grid](p, t, res, loss, n_elements, BLOCK_SIZE=self.block_size, num_warps=self.num_warps,)
         else:
             kernel = self.require_compiled_ptx()[grid](
                 p,
@@ -41,6 +44,7 @@ class MSELossKernel(TritonPTXKernel):
                 res,
                 loss,
                 n_elements,
+                BLOCK_SIZE=self.block_size,
                 **self.ptx_launch_kwargs(),
             )
         return loss / n_elements, kernel

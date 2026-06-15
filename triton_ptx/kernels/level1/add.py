@@ -3,12 +3,14 @@ import torch
 import triton
 import triton.language as tl
 
-from triton_ptx.helpers.kernels import get_ptx_constexpr
 from triton_ptx.kernels.base import TritonPTXKernel
 
 class AddKernel(TritonPTXKernel):
-    def __init__(self, *, block_size=1024, ptx=None):
+
+    def __init__(self, *, block_size=1024, num_warps=4, ptx=None):
         self.block_size = block_size
+        self.constexpr_values = {"KERNEL_BLOCK_SIZE": block_size}
+        self.num_warps = num_warps
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
@@ -43,6 +45,7 @@ class AddKernel(TritonPTXKernel):
         if not ptx:
             kernel = self.compiled_kernel[grid](
                 x, y, output, n_elements, KERNEL_BLOCK_SIZE=self.block_size,
+                num_warps=self.num_warps,
             )
         else:
             kernel = self.require_compiled_ptx()[grid](
@@ -50,10 +53,7 @@ class AddKernel(TritonPTXKernel):
                 y,
                 output,
                 n_elements,
-                KERNEL_BLOCK_SIZE=(
-                    get_ptx_constexpr(self.ptx, "KERNEL_BLOCK_SIZE")
-                    or self.block_size
-                ),
+                KERNEL_BLOCK_SIZE=self.block_size,
                 **self.ptx_launch_kwargs(),
             )
         return output, kernel

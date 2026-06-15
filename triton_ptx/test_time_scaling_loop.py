@@ -53,24 +53,29 @@ def run_test_time_scaling_loop(
     print(f"Compiling baseline Triton PTX for {kernel_cls.__name__}")
     baseline_ptx = dump_kernel_ptx(kernel_cls())
     ptx_signature = parse_ptx_signature(baseline_ptx)
+    version, target, address_size = get_ptx_system_config()
     (run_archive_root / "compiled_triton_kernel.ptx").write_text(baseline_ptx + "\n", encoding="utf-8")
 
     prompter = OpenAIPrompt()
     evaluator = TritonPTXCandidateEvaluator(
-        kernel_cls
+        kernel_cls,
     )
     archive_writer = JsonDatasetWriter(dataset_dir=run_archive_root)
 
     current_prompt = build_prompt_for_operator(
-        kernel_cls,
-        num_answers=k,
-        ptx_signature=ptx_signature,
-    )
+            kernel_cls,
+            num_answers=k,
+            version=version,
+            target=target,
+            address_size=address_size,
+            ptx_signature=ptx_signature,
+        )
+    
+
     (run_archive_root / "initial_prompt.md").write_text(current_prompt + "\n", encoding="utf-8")
 
     current_candidates = []
 
-    return 0
 
     for round_index in range(1, rounds + 1):
         print(f"=== Iteration {round_index} ===")
@@ -94,12 +99,16 @@ def run_test_time_scaling_loop(
                     repair_results.append(original_result)
 
                 repair_prompt = build_repair_prompt_for_operator(
-                    result,
-                    kernel_cls,
-                    retry_index=retry_index,
-                    max_retries=max_retries,
-                    ptx_signature=ptx_signature,
-                )
+                        result,
+                        kernel_cls,
+                        retry_index=retry_index,
+                        max_retries=max_retries,
+                        version=version,
+                        target=target,
+                        address_size=address_size,
+                        ptx_signature=ptx_signature,
+                    )
+                
 
                 repair_prompt_name = (
                     f"repair_prompt_iteration_{round_index}"
@@ -139,11 +148,15 @@ def run_test_time_scaling_loop(
         archive_writer.store(f"winner_{round_index}", [winner])
 
         follow_up_prompt = build_follow_up_prompt_for_operator(
-            current_candidates,
-            kernel_cls,
-            num_answers=k,
-            ptx_signature=ptx_signature,
-        )
+                current_candidates,
+                kernel_cls,
+                num_answers=k,
+                version=version,
+                target=target,
+                address_size=address_size,
+                ptx_signature=ptx_signature,
+            )
+        
 
         archive_follow_up_path = run_archive_root / f"follow_up_iteration_{round_index}.md"
         archive_follow_up_path.write_text(follow_up_prompt + "\n", encoding="utf-8")
@@ -154,8 +167,6 @@ def run_test_time_scaling_loop(
 
 
 def parse_args() -> argparse.Namespace:
-    default_version, default_target, default_address_size = get_ptx_system_config()
-
     parser = argparse.ArgumentParser(
         description="Run a manual per-kernel PTX test-time scaling loop."
     )
@@ -175,14 +186,6 @@ def parse_args() -> argparse.Namespace:
         help="Root directory where archived run artifacts will be written.",
     )
     parser.add_argument("--keep-cache", action="store_true", help="Keep the Triton cache between candidates.")
-    parser.add_argument("--version", default=default_version, help="PTX ISA version to request in prompts.")
-    parser.add_argument("--target", default=default_target, help="PTX target to request in prompts.")
-    parser.add_argument(
-        "--address-size",
-        type=int,
-        default=default_address_size,
-        help="PTX address size to request in prompts.",
-    )
     parser.add_argument("--no-dummy-ptrs", action="store_true", help="Do not request dummy pointer parameters.")
     parser.add_argument("--extra-instructions", help="Additional instructions to append to prompts.")
     return parser.parse_args()

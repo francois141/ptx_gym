@@ -1,12 +1,20 @@
-import inspect
-
 import ast
+import importlib.util
+import inspect
 import textwrap
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 EMPTY = inspect.Parameter.empty
 BASE_DIR = Path(__file__).resolve().parent
+
+PTX_LAUNCH_KEYS = frozenset(
+    {
+        "num_threads_x",
+        "num_threads_y",
+        "num_threads_z",
+    }
+)
 
 
 
@@ -18,15 +26,22 @@ def get_ptx_code(ptx):
 def has_ptx_code(ptx):
     return get_ptx_code(ptx) is not None
 
-def get_ptx_constexprs(ptx):
+def get_ptx_extra_payload_keys(ptx):
     if not isinstance(ptx, dict):
         return {}
-    return {key: value for key, value in ptx.items() if key != "ptx"}
+    return {
+        key: value
+        for key, value in ptx.items()
+        if key != "ptx" and key not in PTX_LAUNCH_KEYS
+    }
 
-def get_ptx_constexpr(ptx, name):
+def get_ptx_constexprs(ptx):
+    return get_ptx_extra_payload_keys(ptx)
+
+def get_ptx_constexpr(ptx, name, default=None):
     if isinstance(ptx, dict) and name not in ptx:
-        raise KeyError(f"PTX payload is missing constexpr value: {name}")
-    return get_ptx_constexprs(ptx).get(name)
+        return default
+    return get_ptx_extra_payload_keys(ptx).get(name, default)
 
 
 @dataclass(frozen=True)
@@ -42,6 +57,18 @@ class KernelSpec:
     kernel_name: str
     source: str
     parameters: tuple[KernelParameter, ...]
+    constexpr_values: dict[str, object] = field(default_factory=dict)
+    num_warps: int = 4
+
+
+def is_constexpr_annotation(annotation) -> bool:
+    annotation_text = str(annotation).lower()
+    return (
+        annotation_text == "constexpr"
+        or annotation_text.endswith(".constexpr")
+        or "triton.language.core.constexpr" in annotation_text
+        or ("triton.language" in annotation_text and "constexpr" in annotation_text)
+    )
 
 def parse_parameters(func, source):
     params = []
@@ -108,7 +135,7 @@ def parse_parameters(func, source):
     return tuple(params)
 
 
-def _extract_specification_from_module_source(source, *, filename):
+def _extract_specification_from_module_source(source, *, filename, operator=None):
     lines = tuple(source.splitlines(keepends=True))
     module = ast.parse(source, filename=filename)
     operator_nodes = [
@@ -145,25 +172,77 @@ def _extract_specification_from_module_source(source, *, filename):
         lines[kernel_node.lineno - 1 : kernel_node.end_lineno]
     )
 
-    return KernelSpec(
+    parameters = parse_parameters(kernel_node, source)
+
+    spec = KernelSpec(
         operator_name=class_node.name,
         kernel_name=kernel_node.name,
         source=textwrap.dedent(kernel_source).strip(),
-        parameters=parse_parameters(kernel_node, source),
+        parameters=parameters,
     )
+
+    if operator is None:
+        return spec
+
+    updates = {}
+
+    constexpr_values = getattr(operator, "constexpr_values", None)
+    if isinstance(constexpr_values, dict):
+        updates["constexpr_values"] = dict(constexpr_values)
+
+    num_warps = getattr(operator, "num_warps", None)
+    if isinstance(num_warps, int):
+        updates["num_warps"] = num_warps
+
+    if updates:
+        spec = replace(spec, **updates)
+
+    return spec
+
+
+def _load_operator_from_path(path, operator_name):
+    module_name = f"triton_ptx_dynamic_{path.stem}_{abs(hash(path.resolve()))}"
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Unable to load module from {path}")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    operator_cls = getattr(module, operator_name)
+    return operator_cls()
 
 
 def extract_specification(path):
     source = path.read_text(encoding="utf-8")
-    return _extract_specification_from_module_source(source, filename=str(path))
+    module = ast.parse(source, filename=str(path))
+    operator_names = [
+        class_node.name
+        for class_node in module.body
+        if isinstance(class_node, ast.ClassDef) and class_node.name.endswith("Kernel")
+    ]
+
+    if len(operator_names) != 1:
+        return _extract_specification_from_module_source(source, filename=str(path))
+
+    operator = _load_operator_from_path(path, operator_names[0])
+    return _extract_specification_from_module_source(
+        source,
+        filename=str(path),
+        operator=operator,
+    )
 
 
 def extract_specification_from_operator(operator):
-    operator_cls = operator if inspect.isclass(operator) else operator.__class__
+    if inspect.isclass(operator):
+        operator = operator()
+
+    operator_cls = operator.__class__
     source = textwrap.dedent(inspect.getsource(operator_cls))
     spec = _extract_specification_from_module_source(
         source,
         filename=inspect.getsourcefile(operator_cls) or operator_cls.__name__,
+        operator=operator,
     )
 
     if spec.operator_name != operator_cls.__name__:

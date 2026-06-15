@@ -5,9 +5,12 @@ import triton.language as tl
 from triton_ptx.kernels.base import TritonPTXKernel
 
 class ELUKernel(TritonPTXKernel):
-    def __init__(self, alpha=1.0, block_size=1024, ptx=None):
+
+    def __init__(self, alpha=1.0, block_size=1024, num_warps=4, ptx=None):
         self.alpha = alpha
         self.block_size = block_size
+        self.constexpr_values = {"BLOCK_SIZE": block_size}
+        self.num_warps = num_warps
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
@@ -31,6 +34,7 @@ class ELUKernel(TritonPTXKernel):
         if not ptx:
             kernel = self.compiled_kernel[grid](
                 inputs, output, n_elements, self.alpha, BLOCK_SIZE=self.block_size,
+                num_warps=self.num_warps,
             )
         else:
             kernel = self.require_compiled_ptx()[grid](
@@ -38,6 +42,7 @@ class ELUKernel(TritonPTXKernel):
                 output,
                 n_elements,
                 self.alpha,
+                BLOCK_SIZE=self.block_size,
                 **self.ptx_launch_kwargs(),
             )
         return output, kernel

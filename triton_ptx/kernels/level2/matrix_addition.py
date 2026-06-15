@@ -8,9 +8,12 @@ from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class MatrixAdditionKernel(TritonPTXKernel):
-    def __init__(self, *, block_m=128, block_n=128, ptx=None):
+
+    def __init__(self, *, block_m=128, block_n=128, num_warps=4, ptx=None):
         self.block_m = block_m
         self.block_n = block_n
+        self.constexpr_values = {"BLOCK_M": block_m, "BLOCK_N": block_n}
+        self.num_warps = num_warps
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
@@ -66,6 +69,7 @@ class MatrixAdditionKernel(TritonPTXKernel):
                 output.stride(0),
                 size,
                 **launch_kwargs,
+                num_warps=self.num_warps,
             )
         else:
             kernel = self.require_compiled_ptx()[grid](
@@ -76,7 +80,9 @@ class MatrixAdditionKernel(TritonPTXKernel):
                 y.stride(0),
                 output.stride(0),
                 size,
-                **self.ptx_launch_kwargs(BLOCK_M=self.block_m, BLOCK_N=self.block_n),
+                BLOCK_M=self.block_m,
+                BLOCK_N=self.block_n,
+                **self.ptx_launch_kwargs(),
             )
         return output, kernel
 

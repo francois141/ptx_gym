@@ -5,8 +5,11 @@ import triton.language as tl
 from triton_ptx.kernels.base import TritonPTXKernel
 
 class ArgminKernel(TritonPTXKernel):
-    def __init__(self, block_size=1024, ptx=None):
+
+    def __init__(self, block_size=1024, num_warps=4, ptx=None):
         self.block_size = block_size
+        self.constexpr_values = {"BLOCK_SIZE": block_size}
+        self.num_warps = num_warps
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
@@ -49,12 +52,14 @@ class ArgminKernel(TritonPTXKernel):
                 out,
                 n_elements,
                 BLOCK_SIZE=self.block_size,
+                num_warps=self.num_warps,
             )
         else:
             kernel = self.require_compiled_ptx()[grid](
                 inputs,
                 out,
                 n_elements,
+                BLOCK_SIZE=self.block_size,
                 **self.ptx_launch_kwargs(),
             )
         packed = (int(out[0].item()) & 0xFFFFFFFFFFFFFFFF) ^ 0x8000000000000000

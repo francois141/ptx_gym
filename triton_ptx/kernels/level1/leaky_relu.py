@@ -5,9 +5,12 @@ import triton.language as tl
 from triton_ptx.kernels.base import TritonPTXKernel
 
 class LeakyReLUKernel(TritonPTXKernel):
-    def __init__(self, negative_slope=0.01, block_size=1024, ptx=None):
+
+    def __init__(self, negative_slope=0.01, block_size=1024, num_warps=4, ptx=None):
         self.negative_slope = negative_slope
         self.block_size = block_size
+        self.constexpr_values = {"BLOCK_SIZE": block_size}
+        self.num_warps = num_warps
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
@@ -34,6 +37,7 @@ class LeakyReLUKernel(TritonPTXKernel):
                 n_elements,
                 self.negative_slope,
                 BLOCK_SIZE=self.block_size,
+                num_warps=self.num_warps,
             )
         else:
             kernel = self.require_compiled_ptx()[grid](
@@ -41,6 +45,7 @@ class LeakyReLUKernel(TritonPTXKernel):
                 output,
                 n_elements,
                 self.negative_slope,
+                BLOCK_SIZE=self.block_size,
                 **self.ptx_launch_kwargs(),
             )
         return output, kernel

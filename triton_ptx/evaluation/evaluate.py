@@ -216,6 +216,17 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
         if self.clear_cache:
             clear_triton_cache()
 
+        validation_error = self._validate_payload(payload)
+        if validation_error:
+            return self._failed(
+                payload,
+                round_index=round_index,
+                candidate_index=candidate_index,
+                compiles=False,
+                correct=False,
+                message=validation_error,
+            )
+
         compile_result = run_ptx_compilation(self.operator_cls, ptx_code=payload)
         compile_output = str(compile_result.get("output", "")).strip()
         compile_error = str(compile_result.get("error", "")).strip()
@@ -347,3 +358,33 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
             timing_error=timing_error,
             verifier_report=verifier_report or {},
         )
+
+    def _validate_payload(self, payload: dict[str, Any]) -> str | None:
+        if not isinstance(payload, dict):
+            return "Candidate payload must be a dictionary."
+
+        if not str(payload.get("ptx", "")).strip():
+            return 'Candidate payload is missing non-empty "ptx" code.'
+
+        num_threads_x = payload.get("num_threads_x")
+        if not isinstance(num_threads_x, int) or isinstance(num_threads_x, bool) or num_threads_x <= 0:
+            return 'Candidate payload must include positive integer "num_threads_x".'
+
+        for key in ("num_threads_y", "num_threads_z"):
+            value = payload.get(key)
+            if value is not None and (
+                not isinstance(value, int) or isinstance(value, bool) or value <= 0
+            ):
+                return f'Candidate payload field "{key}" must be a positive integer when present.'
+
+        thread_sum = sum(
+            payload.get(key, 0)
+            for key in ("num_threads_x", "num_threads_y", "num_threads_z")
+        )
+        if thread_sum != 128:
+            return (
+                "Candidate payload thread dimensions must sum to 128 "
+                f"(got {thread_sum})."
+            )
+
+        return None

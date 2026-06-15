@@ -2,12 +2,14 @@ import torch
 import triton
 import triton.language as tl
 
-from triton_ptx.helpers.kernels import get_ptx_constexpr
 from triton_ptx.kernels.base import TritonPTXKernel
 
 class ReduceSumKernel(TritonPTXKernel):
-    def __init__(self, *, block_size=1024, ptx=None):
+
+    def __init__(self, *, block_size=1024, num_warps=4, ptx=None):
         self.block_size = block_size
+        self.constexpr_values = {"BLOCK_SIZE": block_size}
+        self.num_warps = num_warps
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
@@ -36,11 +38,12 @@ class ReduceSumKernel(TritonPTXKernel):
         if not ptx:
             kernel = self.compiled_kernel[grid](
                 inputs, output, n_elements, BLOCK_SIZE=self.block_size,
+                num_warps=self.num_warps,
             )
         else:
             # The hand-written PTX uses 128 threads and a grid-stride loop over
             # 1024-element tiles, so cap CTAs to keep global atomic pressure low.
-            ptx_tile_size = get_ptx_constexpr(self.ptx, "BLOCK_SIZE", 1024)
+            ptx_tile_size = self.block_size
             ptx_grid = lambda meta: (
                 max(1, min(triton.cdiv(n_elements, ptx_tile_size), 4096)),
             )
@@ -48,7 +51,8 @@ class ReduceSumKernel(TritonPTXKernel):
                 inputs,
                 output,
                 n_elements,
-                **self.ptx_launch_kwargs(BLOCK_SIZE=ptx_tile_size, num_warps=4),
+                BLOCK_SIZE=ptx_tile_size,
+                **self.ptx_launch_kwargs(),
             )
         return output, kernel
 

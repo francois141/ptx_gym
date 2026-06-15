@@ -5,15 +5,18 @@ from pathlib import Path
 
 from triton_ptx.evaluation import EvaluatedCandidate
 from triton_ptx.helpers.kernels import (
+    PTX_LAUNCH_KEYS,
     extract_specification,
     extract_specification_from_operator,
-    get_ptx_constexprs,
+    get_ptx_extra_payload_keys,
 )
 from triton_ptx.prompts import (
     commenting_rules,
     correctness_rules,
+    constexpr_values_block,
     extracted_signature_information,
     follow_up_task,
+    num_warps_block,
     output_contract,
     performance_rules,
     ptx_header,
@@ -33,14 +36,29 @@ def _format_metric(value: float) -> str:
     return f"{value:.6g}"
 
 
-def _format_constexprs(candidate: EvaluatedCandidate) -> str:
-    constexprs = get_ptx_constexprs(candidate.payload)
-    if not constexprs:
+def _format_extra_payload_keys(candidate: EvaluatedCandidate) -> str:
+    extra_payload_keys = get_ptx_extra_payload_keys(candidate.payload)
+    if not extra_payload_keys:
         return "None"
 
     return "\n".join(
         f"- {name}: {value!r}"
-        for name, value in sorted(constexprs.items())
+        for name, value in sorted(extra_payload_keys.items())
+    )
+
+
+def _format_launch_metadata(candidate: EvaluatedCandidate) -> str:
+    launch_metadata = {
+        key: candidate.payload[key]
+        for key in sorted(PTX_LAUNCH_KEYS)
+        if isinstance(candidate.payload, dict) and key in candidate.payload
+    }
+    if not launch_metadata:
+        return "None"
+
+    return "\n".join(
+        f"- {name}: {value!r}"
+        for name, value in launch_metadata.items()
     )
 
 
@@ -77,8 +95,11 @@ Timing error:
 - p50: {_format_metric(candidate.p50)}
 - p80: {_format_metric(candidate.p80)}
 
-Chosen constexpr values:
-{_format_constexprs(candidate)}
+Extra PTX payload keys:
+{_format_extra_payload_keys(candidate)}
+
+Launch metadata:
+{_format_launch_metadata(candidate)}
 {diagnostics_block}
 
 PTX:
@@ -122,9 +143,9 @@ def prompt_builder(
     spec,
     candidates: list[EvaluatedCandidate],
     *,
-    version: str = "8.7",
-    target: str = "sm_89",
-    address_size: int = 64,
+    version: str,
+    target: str,
+    address_size: int,
     num_answers: int = 5,
     ptx_signature=None,
 ) -> str:
@@ -136,6 +157,8 @@ def prompt_builder(
             address_size=address_size,
         ).strip(),
         extracted_signature_information(spec.parameters),
+        constexpr_values_block(spec),
+        num_warps_block(spec),
         signature_template(
             spec.parameters,
             version=version,
@@ -146,11 +169,11 @@ def prompt_builder(
         ),
         correctness_rules(),
         commenting_rules(),
-        performance_rules(target, version),
+        performance_rules(target, version, spec),
         triton_kernel_block(spec.source),
         candidate_results_block(candidates),
         follow_up_rules(),
-        output_contract(),
+        output_contract(spec),
     ]
     return "\n\n".join(sections)
 
@@ -167,9 +190,9 @@ def build_follow_up_prompt_for_path(
     path,
     candidates: list[EvaluatedCandidate] | None = None,
     *,
-    version: str = "8.7",
-    target: str = "sm_89",
-    address_size: int = 64,
+    version: str,
+    target: str,
+    address_size: int,
     num_answers: int = 5,
     ptx_signature=None,
 ):
@@ -189,9 +212,9 @@ def build_follow_up_prompt_for_operator(
     candidates: list[EvaluatedCandidate] | None,
     operator_cls: type,
     *,
-    version: str = "8.7",
-    target: str = "sm_89",
-    address_size: int = 64,
+    version: str,
+    target: str,
+    address_size: int,
     num_answers: int = 5,
     ptx_signature=None,
 ):
@@ -210,9 +233,9 @@ def build_follow_up_prompt_for_operator(
 def generate_prompts(
     candidates: list[EvaluatedCandidate] | None = None,
     *,
-    version: str = "8.7",
-    target: str = "sm_89",
-    address_size: int = 64,
+    version: str,
+    target: str,
+    address_size: int,
     num_answers: int = 5,
 ):
     out_dir = BASE_DIR / "follow_up"

@@ -6,7 +6,9 @@ from triton_ptx.helpers.kernels import extract_specification_from_operator
 from triton_ptx.prompts.blocks import (
     commenting_rules,
     correctness_rules,
+    constexpr_values_block,
     extracted_signature_information,
+    num_warps_block,
     output_contract,
     ptx_header,
     signature_template,
@@ -33,7 +35,7 @@ def repair_rules() -> str:
 ## Repair Rules
 
 - Fix the smallest part of the PTX needed to address the reported compilation or verification failure.
-- Preserve the exact PTX header, kernel entry name, runtime argument order, and constexpr dictionary keys.
+- Preserve the exact PTX header, kernel entry name, runtime argument order, and launch metadata keys.
 - If compilation failed, prioritize valid PTX syntax, declarations, parameter loads, address spaces, and instruction types.
 - If correctness verification failed, prioritize matching the Triton semantics, masks, indexing, and stores exactly.
 - Return one complete replacement candidate, not a patch or explanation.
@@ -46,9 +48,9 @@ def prompt_builder(
     *,
     retry_index: int,
     max_retries: int,
-    version: str = "8.7",
-    target: str = "sm_89",
-    address_size: int = 64,
+    version: str,
+    target: str,
+    address_size: int,
     ptx_signature=None,
 ) -> str:
     sections = [
@@ -59,6 +61,8 @@ def prompt_builder(
             address_size=address_size,
         ).strip(),
         extracted_signature_information(spec.parameters),
+        constexpr_values_block(spec),
+        num_warps_block(spec),
         signature_template(
             spec.parameters,
             version=version,
@@ -72,7 +76,7 @@ def prompt_builder(
         triton_kernel_block(spec.source),
         candidate_results_block([failed_candidate]),
         repair_rules(),
-        output_contract(),
+        output_contract(spec),
     ]
     return "\n\n".join(sections)
 
@@ -83,9 +87,9 @@ def build_repair_prompt_for_operator(
     *,
     retry_index: int,
     max_retries: int,
-    version: str = "8.7",
-    target: str = "sm_89",
-    address_size: int = 64,
+    version: str,
+    target: str,
+    address_size: int,
     ptx_signature=None,
 ) -> str:
     spec = extract_specification_from_operator(operator_cls)
