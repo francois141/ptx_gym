@@ -95,38 +95,28 @@ class LinearSigmoidSumKernel(TritonPTXKernel):
         x = inputs
         output = torch.empty((x.shape[0], 1), device=x.device, dtype=x.dtype)
         grid = (triton.cdiv(x.shape[0], self.block_m),)
-        launch_kwargs = dict(
+        if not ptx:
+            launch_kernel = self.compiled_kernel
+            launch_kwargs = dict(num_warps=self.num_warps)
+        else:
+            launch_kernel = self.compiled_kernel_ptx
+            launch_kwargs = self.ptx_launch_kwargs()
+
+        kernel = launch_kernel[grid](
+            x,
+            self.linear.weight,
+            self.linear.bias,
+            output,
+            x.shape[0],
+            x.stride(0),
+            self.linear.weight.stride(0),
             INPUT_SIZE=self.input_size,
             HIDDEN_SIZE=self.hidden_size,
             BLOCK_M=self.block_m,
             BLOCK_N=self.block_n,
             BLOCK_K=self.block_k,
+            **launch_kwargs,
         )
-
-        if not ptx:
-            kernel = self.compiled_kernel[grid](
-                x,
-                self.linear.weight,
-                self.linear.bias,
-                output,
-                x.shape[0],
-                x.stride(0),
-                self.linear.weight.stride(0),
-                **launch_kwargs,
-                num_warps=self.num_warps,
-            )
-        else:
-            kernel = self.require_compiled_ptx()[grid](
-                x,
-                self.linear.weight,
-                self.linear.bias,
-                output,
-                x.shape[0],
-                x.stride(0),
-                self.linear.weight.stride(0),
-                **self.ptx_launch_kwargs(**launch_kwargs, num_warps=self.num_warps),
-            )
-
         return output, kernel
 
     def forward_torch(self, inputs):

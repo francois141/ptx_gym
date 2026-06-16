@@ -115,7 +115,23 @@ class Conv2dKernel(TritonPTXKernel):
         bias = self.conv1.bias if self.conv1.bias is not None else self.conv1.weight
         total = output.numel()
         grid = lambda meta: (triton.cdiv(total, meta["BLOCK_SIZE"]),)
-        launch_kwargs = dict(
+        if not ptx:
+            launch_kernel = self.compiled_kernel
+            launch_kwargs = dict(num_warps=self.num_warps)
+        else:
+            launch_kernel = self.compiled_kernel_ptx
+            launch_kwargs = self.ptx_launch_kwargs()
+
+        kernel = launch_kernel[grid](
+            x,
+            self.conv1.weight,
+            bias,
+            output,
+            total,
+            x.shape[2],
+            x.shape[3],
+            out_h,
+            out_w,
             IN_CHANNELS=self.in_channels,
             OUT_CHANNELS=self.out_channels,
             KERNEL_SIZE=self.kernel_size,
@@ -123,36 +139,8 @@ class Conv2dKernel(TritonPTXKernel):
             PADDING=self.padding,
             HAS_BIAS=self.conv1.bias is not None,
             BLOCK_SIZE=self.block_size,
+            **launch_kwargs,
         )
-
-        if not ptx:
-            kernel = self.compiled_kernel[grid](
-                x,
-                self.conv1.weight,
-                bias,
-                output,
-                total,
-                x.shape[2],
-                x.shape[3],
-                out_h,
-                out_w,
-                **launch_kwargs,
-                num_warps=self.num_warps,
-            )
-        else:
-            kernel = self.require_compiled_ptx()[grid](
-                x,
-                self.conv1.weight,
-                bias,
-                output,
-                total,
-                x.shape[2],
-                x.shape[3],
-                out_h,
-                out_w,
-                **self.ptx_launch_kwargs(**launch_kwargs, num_warps=self.num_warps),
-            )
-
         return output, kernel
 
     def forward_torch(self, inputs):

@@ -36,24 +36,19 @@ class ReduceSumKernel(TritonPTXKernel):
         grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
         if not ptx:
-            kernel = self.compiled_kernel[grid](
-                inputs, output, n_elements, BLOCK_SIZE=self.block_size,
-                num_warps=self.num_warps,
-            )
+            launch_kernel = self.compiled_kernel
+            launch_kwargs = dict(num_warps=self.num_warps)
         else:
-            # The hand-written PTX uses 128 threads and a grid-stride loop over
-            # 1024-element tiles, so cap CTAs to keep global atomic pressure low.
-            ptx_tile_size = self.block_size
-            ptx_grid = lambda meta: (
-                max(1, min(triton.cdiv(n_elements, ptx_tile_size), 4096)),
-            )
-            kernel = self.require_compiled_ptx()[ptx_grid](
-                inputs,
-                output,
-                n_elements,
-                BLOCK_SIZE=ptx_tile_size,
-                **self.ptx_launch_kwargs(),
-            )
+            launch_kernel = self.compiled_kernel_ptx
+            launch_kwargs = self.ptx_launch_kwargs()
+
+        kernel = launch_kernel[grid](
+            inputs,
+            output,
+            n_elements,
+            BLOCK_SIZE=self.block_size,
+            **launch_kwargs,
+        )
         return output, kernel
 
     def forward_torch(self, inputs):

@@ -70,20 +70,28 @@ class LinearDivideSumScaleKernel(TritonPTXKernel):
         x = inputs
         output = torch.empty((x.shape[0], 1), device=x.device, dtype=x.dtype)
         grid = (triton.cdiv(x.shape[0], self.block_m),)
-        kwargs = dict(
-            INPUT_SIZE=self.input_size, HIDDEN_SIZE=self.hidden_size,
-            BLOCK_M=self.block_m, BLOCK_N=self.block_n, BLOCK_K=self.block_k,
-        )
         if not ptx:
-            kernel = self.compiled_kernel[grid](
-                x, self.weight, output, x.shape[0], self.scaling_factor, x.stride(0), self.weight.stride(0),
-                **kwargs, num_warps=self.num_warps,
-            )
+            launch_kernel = self.compiled_kernel
+            launch_kwargs = dict(num_warps=self.num_warps)
         else:
-            kernel = self.require_compiled_ptx()[grid](
-                x, self.weight, output, x.shape[0], self.scaling_factor, x.stride(0), self.weight.stride(0),
-                **self.ptx_launch_kwargs(**kwargs, num_warps=self.num_warps),
-            )
+            launch_kernel = self.compiled_kernel_ptx
+            launch_kwargs = self.ptx_launch_kwargs()
+
+        kernel = launch_kernel[grid](
+            x,
+            self.weight,
+            output,
+            x.shape[0],
+            self.scaling_factor,
+            x.stride(0),
+            self.weight.stride(0),
+            INPUT_SIZE=self.input_size,
+            HIDDEN_SIZE=self.hidden_size,
+            BLOCK_M=self.block_m,
+            BLOCK_N=self.block_n,
+            BLOCK_K=self.block_k,
+            **launch_kwargs,
+        )
         return output, kernel
 
     def forward_torch(self, inputs):

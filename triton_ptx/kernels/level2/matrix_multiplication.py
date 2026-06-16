@@ -70,33 +70,25 @@ class MatrixMultiplicationKernel(TritonPTXKernel):
         )
 
         if not ptx:
-            kernel = self.compiled_kernel[grid](
-                a,
-                b,
-                c,
-                a.stride(0),
-                b.stride(0),
-                c.stride(0),
-                a.shape[1],
-                BLOCK_M=self.block_m,
-                BLOCK_N=self.block_n,
-                BLOCK_K=self.block_k,
-                num_warps=self.num_warps,
-            )
+            launch_kernel = self.compiled_kernel
+            launch_kwargs = dict(num_warps=self.num_warps)
         else:
-            kernel = self.require_compiled_ptx()[grid](
-                a,
-                b,
-                c,
-                a.stride(0),
-                b.stride(0),
-                c.stride(0),
-                a.shape[1],
-                BLOCK_M=self.block_m,
-                BLOCK_N=self.block_n,
-                BLOCK_K=self.block_k,
-                **self.ptx_launch_kwargs(),
-            )
+            launch_kernel = self.compiled_kernel_ptx
+            launch_kwargs = self.ptx_launch_kwargs()
+
+        kernel = launch_kernel[grid](
+            a,
+            b,
+            c,
+            a.stride(0),
+            b.stride(0),
+            c.stride(0),
+            a.shape[1],
+            BLOCK_M=self.block_m,
+            BLOCK_N=self.block_n,
+            BLOCK_K=self.block_k,
+            **launch_kwargs,
+        )
         return c, kernel
 
     def forward_torch(self, inputs):

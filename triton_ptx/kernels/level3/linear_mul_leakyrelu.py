@@ -76,21 +76,31 @@ class LinearMulLeakyReLUKernel(TritonPTXKernel):
         x = inputs
         output = torch.empty((x.shape[0], self.out_features), device=x.device, dtype=x.dtype)
         grid = lambda meta: (triton.cdiv(x.shape[0], meta["BLOCK_M"]), triton.cdiv(self.out_features, meta["BLOCK_N"]))
-        kwargs = dict(
-            IN_FEATURES=self.in_features, OUT_FEATURES=self.out_features,
-            BLOCK_M=self.block_m, BLOCK_N=self.block_n, BLOCK_K=self.block_k,
-        )
         if not ptx:
-            kernel = self.compiled_kernel[grid](
-                x, self.gemm.weight, self.gemm.bias, output, x.shape[0], self.multiplier, self.negative_slope,
-                x.stride(0), self.gemm.weight.stride(0), output.stride(0), **kwargs, num_warps=self.num_warps,
-            )
+            launch_kernel = self.compiled_kernel
+            launch_kwargs = dict(num_warps=self.num_warps)
         else:
-            kernel = self.require_compiled_ptx()[grid](
-                x, self.gemm.weight, self.gemm.bias, output, x.shape[0], self.multiplier, self.negative_slope,
-                x.stride(0), self.gemm.weight.stride(0), output.stride(0),
-                **self.ptx_launch_kwargs(**kwargs, num_warps=self.num_warps),
-            )
+            launch_kernel = self.compiled_kernel_ptx
+            launch_kwargs = self.ptx_launch_kwargs()
+
+        kernel = launch_kernel[grid](
+            x,
+            self.gemm.weight,
+            self.gemm.bias,
+            output,
+            x.shape[0],
+            self.multiplier,
+            self.negative_slope,
+            x.stride(0),
+            self.gemm.weight.stride(0),
+            output.stride(0),
+            IN_FEATURES=self.in_features,
+            OUT_FEATURES=self.out_features,
+            BLOCK_M=self.block_m,
+            BLOCK_N=self.block_n,
+            BLOCK_K=self.block_k,
+            **launch_kwargs,
+        )
         return output, kernel
 
     def forward_torch(self, inputs):
