@@ -103,42 +103,30 @@ class LinearReLUDivideKernel(TritonPTXKernel):
             triton.cdiv(x.shape[0], meta["BLOCK_M"]),
             triton.cdiv(self.out_features, meta["BLOCK_N"]),
         )
-        launch_kwargs = dict(
+        if not ptx:
+            launch_kernel = self.compiled_kernel
+            launch_kwargs = dict(num_warps=self.num_warps)
+        else:
+            launch_kernel = self.compiled_kernel_ptx
+            launch_kwargs = self.ptx_launch_kwargs()
+
+        kernel = launch_kernel[grid](
+            x,
+            self.linear.weight,
+            self.linear.bias,
+            output,
+            x.shape[0],
+            self.divisor,
+            x.stride(0),
+            self.linear.weight.stride(0),
+            output.stride(0),
             IN_FEATURES=self.in_features,
             OUT_FEATURES=self.out_features,
             BLOCK_M=self.block_m,
             BLOCK_N=self.block_n,
             BLOCK_K=self.block_k,
+            **launch_kwargs,
         )
-
-        if not ptx:
-            kernel = self.compiled_kernel[grid](
-                x,
-                self.linear.weight,
-                self.linear.bias,
-                output,
-                x.shape[0],
-                self.divisor,
-                x.stride(0),
-                self.linear.weight.stride(0),
-                output.stride(0),
-                **launch_kwargs,
-                num_warps=self.num_warps,
-            )
-        else:
-            kernel = self.require_compiled_ptx()[grid](
-                x,
-                self.linear.weight,
-                self.linear.bias,
-                output,
-                x.shape[0],
-                self.divisor,
-                x.stride(0),
-                self.linear.weight.stride(0),
-                output.stride(0),
-                **self.ptx_launch_kwargs(**launch_kwargs, num_warps=self.num_warps),
-            )
-
         return output, kernel
 
     def forward_torch(self, inputs):

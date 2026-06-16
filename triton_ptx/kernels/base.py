@@ -23,13 +23,6 @@ class TritonPTXKernel(ABC):
         if has_ptx_code(ptx):
             self.compiled_kernel_ptx = jit_fixed_parameters(self.kernel, ptx=get_ptx_code(ptx))
 
-    def require_compiled_ptx(self):
-        if not has_ptx_code(getattr(self, "ptx", None)):
-            raise RuntimeError(f"{type(self).__name__} was called with ptx=True but has no PTX code.")
-        if getattr(self, "compiled_kernel_ptx", None) is None:
-            raise RuntimeError(f"{type(self).__name__} has PTX code but no compiled PTX kernel.")
-        return self.compiled_kernel_ptx
-
     def ptx_launch_kwargs(self, **kwargs) -> dict[str, Any]:
         launch_kwargs = dict(kwargs)
         if not isinstance(getattr(self, "ptx", None), dict):

@@ -47,21 +47,19 @@ class ArgminKernel(TritonPTXKernel):
         grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
         if not ptx:
-            kernel = self.compiled_kernel[grid](
-                inputs,
-                out,
-                n_elements,
-                BLOCK_SIZE=self.block_size,
-                num_warps=self.num_warps,
-            )
+            launch_kernel = self.compiled_kernel
+            launch_kwargs = dict(num_warps=self.num_warps)
         else:
-            kernel = self.require_compiled_ptx()[grid](
-                inputs,
-                out,
-                n_elements,
-                BLOCK_SIZE=self.block_size,
-                **self.ptx_launch_kwargs(),
-            )
+            launch_kernel = self.compiled_kernel_ptx
+            launch_kwargs = self.ptx_launch_kwargs()
+
+        kernel = launch_kernel[grid](
+            inputs,
+            out,
+            n_elements,
+            BLOCK_SIZE=self.block_size,
+            **launch_kwargs,
+        )
         packed = (int(out[0].item()) & 0xFFFFFFFFFFFFFFFF) ^ 0x8000000000000000
         index = packed & 0xFFFFFFFF
         return torch.tensor(index, device=inputs.device, dtype=torch.int64), kernel

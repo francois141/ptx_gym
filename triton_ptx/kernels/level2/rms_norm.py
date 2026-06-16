@@ -74,32 +74,23 @@ class RMSNormKernel(TritonPTXKernel):
         grid = lambda meta: (triton.cdiv(total, meta["BLOCK_SIZE"]),)
 
         if not ptx:
-            kernel = self.compiled_kernel[grid](
-                x,
-                output,
-                total,
-                x.shape[1],
-                spatial,
-                self.eps,
-                BLOCK_SIZE=self.block_size,
-                MAX_FEATURES=self.num_features,
-                num_warps=self.num_warps,
-            )
+            launch_kernel = self.compiled_kernel
+            launch_kwargs = dict(num_warps=self.num_warps)
         else:
-            kernel = self.require_compiled_ptx()[grid](
-                x,
-                output,
-                total,
-                x.shape[1],
-                spatial,
-                self.eps,
-                **self.ptx_launch_kwargs(
-                    BLOCK_SIZE=self.block_size,
-                    MAX_FEATURES=self.num_features,
-                    num_warps=self.num_warps,
-                ),
-            )
+            launch_kernel = self.compiled_kernel_ptx
+            launch_kwargs = self.ptx_launch_kwargs()
 
+        kernel = launch_kernel[grid](
+            x,
+            output,
+            total,
+            x.shape[1],
+            spatial,
+            self.eps,
+            BLOCK_SIZE=self.block_size,
+            MAX_FEATURES=self.num_features,
+            **launch_kwargs,
+        )
         return output, kernel
 
     def forward_torch(self, inputs):

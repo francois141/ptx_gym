@@ -65,12 +65,31 @@ class MaxPool3dKernel(TritonPTXKernel):
         indices = torch.empty(output.shape, device=x.device, dtype=torch.int64)
         total = output.numel()
         grid = lambda meta: (triton.cdiv(total, meta["BLOCK_SIZE"]),)
-        kwargs = dict(KERNEL_SIZE=self.kernel_size, STRIDE=self.stride, PADDING=self.padding, DILATION=self.dilation, BLOCK_SIZE=self.block_size)
-
         if not ptx:
-            kernel = self.compiled_kernel[grid](x, output, indices, total, x.shape[2], x.shape[3], x.shape[4], out_d, out_h, out_w, **kwargs, num_warps=self.num_warps)
+            launch_kernel = self.compiled_kernel
+            launch_kwargs = dict(num_warps=self.num_warps)
         else:
-            kernel = self.require_compiled_ptx()[grid](x, output, indices, total, x.shape[2], x.shape[3], x.shape[4], out_d, out_h, out_w, **self.ptx_launch_kwargs(**kwargs, num_warps=self.num_warps))
+            launch_kernel = self.compiled_kernel_ptx
+            launch_kwargs = self.ptx_launch_kwargs()
+
+        kernel = launch_kernel[grid](
+            x,
+            output,
+            indices,
+            total,
+            x.shape[2],
+            x.shape[3],
+            x.shape[4],
+            out_d,
+            out_h,
+            out_w,
+            KERNEL_SIZE=self.kernel_size,
+            STRIDE=self.stride,
+            PADDING=self.padding,
+            DILATION=self.dilation,
+            BLOCK_SIZE=self.block_size,
+            **launch_kwargs,
+        )
         return output, kernel
 
     def forward_torch(self, inputs):

@@ -31,23 +31,20 @@ class LeakyReLUKernel(TritonPTXKernel):
         grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
         if not ptx:
-            kernel = self.compiled_kernel[grid](
-                inputs,
-                output,
-                n_elements,
-                self.negative_slope,
-                BLOCK_SIZE=self.block_size,
-                num_warps=self.num_warps,
-            )
+            launch_kernel = self.compiled_kernel
+            launch_kwargs = dict(num_warps=self.num_warps)
         else:
-            kernel = self.require_compiled_ptx()[grid](
-                inputs,
-                output,
-                n_elements,
-                self.negative_slope,
-                BLOCK_SIZE=self.block_size,
-                **self.ptx_launch_kwargs(),
-            )
+            launch_kernel = self.compiled_kernel_ptx
+            launch_kwargs = self.ptx_launch_kwargs()
+
+        kernel = launch_kernel[grid](
+            inputs,
+            output,
+            n_elements,
+            self.negative_slope,
+            BLOCK_SIZE=self.block_size,
+            **launch_kwargs,
+        )
         return output, kernel
 
     def forward_torch(self, inputs):
