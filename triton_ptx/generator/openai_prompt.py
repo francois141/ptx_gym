@@ -137,8 +137,13 @@ class OpenAIPrompt(ResponseGenerator):
             cost = self._estimate_cost(response)
             if cost is None:
                 cost_available = False
+                print(
+                    f"Estimated query cost: unavailable for "
+                    f"model {self.model!r}"
+                )
             else:
                 total_cost += cost
+                print(f"Estimated query cost: ${cost:.6f}")
 
             for choice in response.choices:
                 text = choice.message.content or ""
@@ -166,7 +171,7 @@ class OpenAIPrompt(ResponseGenerator):
             )
         else:
             print(
-                f"Estimated total query cost: ${cost:.6f}"
+                f"Estimated total query cost: ${total_cost:.6f}"
             )
 
         return all_answers

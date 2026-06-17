@@ -28,6 +28,12 @@ Run test-time scaling for one kernel:
 python3 -m triton_ptx.test_time_scaling_loop AddKernel
 ```
 
+Run test-time scaling against Anthropic Claude Opus 4.8:
+
+```bash
+python3 -m triton_ptx.test_time_scaling_loop AddKernel --anthropic
+```
+
 Write test-time scaling artifacts to a custom database directory:
 
 ```bash

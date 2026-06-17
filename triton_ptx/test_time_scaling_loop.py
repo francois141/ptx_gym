@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from triton_ptx.evaluation import TritonPTXCandidateEvaluator
-from triton_ptx.generator import OpenAIPrompt
+from triton_ptx.generator import AnthropicPrompt, OpenAIPrompt
 from triton_ptx.helpers.environment import get_ptx_system_config
 from triton_ptx.helpers.ptx import parse_ptx_signature
 from triton_ptx.helpers.storage import JsonDatasetWriter
@@ -38,6 +38,7 @@ def run_test_time_scaling_loop(
     k: int = 3,
     max_retries: int = 3,
     database_root: Path,
+    use_anthropic: bool = False,
 ) -> Path:
 
     kernel_cls = resolve_kernel(kernel_name)
@@ -56,7 +57,7 @@ def run_test_time_scaling_loop(
     version, target, address_size = get_ptx_system_config()
     (run_archive_root / "compiled_triton_kernel.ptx").write_text(baseline_ptx + "\n", encoding="utf-8")
 
-    prompter = OpenAIPrompt()
+    prompter = AnthropicPrompt() if use_anthropic else OpenAIPrompt()
     evaluator = TritonPTXCandidateEvaluator(
         kernel_cls,
     )
@@ -185,6 +186,11 @@ def parse_args() -> argparse.Namespace:
         default="database",
         help="Root directory where archived run artifacts will be written.",
     )
+    parser.add_argument(
+        "--anthropic",
+        action="store_true",
+        help="Use the Anthropic endpoint with the Claude Opus 4.8 model.",
+    )
     parser.add_argument("--keep-cache", action="store_true", help="Keep the Triton cache between candidates.")
     parser.add_argument("--no-dummy-ptrs", action="store_true", help="Do not request dummy pointer parameters.")
     parser.add_argument("--extra-instructions", help="Additional instructions to append to prompts.")
@@ -206,6 +212,7 @@ def main() -> None:
         k=args.k,
         max_retries=args.max_retries,
         database_root=args.database_dir,
+        use_anthropic=args.anthropic,
     )
 
 
