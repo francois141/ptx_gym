@@ -28,6 +28,8 @@ Prefer Tensor Core paths for GEMM-like work when viable: FP16/BF16/TF32 inputs, 
 ldmatrix/shared-memory staging, and mma.sync.aligned or newer WGMMA-family instructions. Use local
 tools to compile, verify, benchmark, and repair candidates before finalizing."""
 
+AGENT_PROMPTS_PATH = PACKAGE_DIR / "triton_ptx" / "prompts"
+SYSTEM_PROMPT_PATH = AGENT_PROMPTS_PATH / "SYSTEM.md"
 
 def log_section(title: str) -> None:
     print("\n" + "=" * 80)
@@ -63,6 +65,13 @@ def load_tensor_core_skill_prompt(skill_path: Path = TENSOR_CORE_SKILL_PATH) -> 
         f"{skill_text}\n\n"
         "Use the available local tools to compile, verify, benchmark, and repair candidates before finalizing."
     )
+
+
+def get_system_prompt() -> str:
+    system_prompt = SYSTEM_PROMPT_PATH.read_text()
+    skills = [load_tensor_core_skill_prompt()]
+    skill_prompt = "\n=============\n".join(skills)
+    return system_prompt + "\n\n<skills>" + skill_prompt + "\n</skills>"
 
 
 def _json_safe(value: Any) -> Any:
@@ -250,7 +259,6 @@ def get_follow_up_prompt(
 
 
 TOOL_FUNCTIONS: dict[str, Callable[..., dict[str, Any]]] = {
-    "get_kernel_prompt": get_kernel_prompt,
     "compile_candidate": compile_candidate,
     "evaluate_candidate": evaluate_candidate,
     "get_repair_prompt": get_repair_prompt,
@@ -259,22 +267,6 @@ TOOL_FUNCTIONS: dict[str, Callable[..., dict[str, Any]]] = {
 
 
 OPENAI_TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get_kernel_prompt",
-            "description": "Return the exact prompt context, baseline PTX, signature, and target metadata for a kernel.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "kernel_name": {"type": "string"},
-                    "num_answers": {"type": "integer", "minimum": 1, "default": 1},
-                },
-                "required": ["kernel_name"],
-                "additionalProperties": False,
-            },
-        },
-    },
     {
         "type": "function",
         "function": {
@@ -364,15 +356,11 @@ def run_agent_loop(
 ) -> str:
     client = OpenAI()
 
+    kernel_context = get_kernel_prompt(kernel_name)
+
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": load_tensor_core_skill_prompt()},
-        {
-            "role": "user",
-            "content": (
-                f"Optimize {kernel_name}. Use tools to get the kernel context, generate PTX candidates, "
-                "compile/evaluate them locally, repair failures, and finish with the best candidate and metrics. SINCE WE ARE WORKING ON A MATRIX MULTIPLICATION IT IS ESSENTIAL THAT THE OUTPUT CONTAINS TENSOR CORES"
-            ),
-        },
+        {"role": "system", "content": get_system_prompt()},
+        {"role": "user", "content": kernel_context["prompt"]},
     ]
 
     trace: list[dict[str, Any]] = []
