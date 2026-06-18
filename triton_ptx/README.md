@@ -28,6 +28,13 @@ Run test-time scaling for one kernel:
 python3 -m triton_ptx.test_time_scaling_loop AddKernel
 ```
 
+Run an OpenAI tool-calling agent loop where the model can directly call local
+compile, correctness, and benchmark tools:
+
+```bash
+python3 -m triton_ptx.openai_agent_tools MatrixMultiplicationKernel
+```
+
 Run test-time scaling against Anthropic Claude Opus 4.8:
 
 ```bash
