@@ -8,14 +8,15 @@ import subprocess
 import torch
 
 
-_PTXAS_PATH = (
+_PTXAS_BIN_DIR = (
     Path(__file__).resolve().parents[2]
     / "third_party"
     / "nvidia"
     / "backend"
     / "bin"
-    / "ptxas"
 )
+_PTXAS_PATH = _PTXAS_BIN_DIR / "ptxas"
+_PTXAS_BLACKWELL_PATH = _PTXAS_BIN_DIR / "ptxas-blackwell"
 
 
 def _cuda_release_to_ptx_version(cuda_version: str) -> str:
@@ -68,6 +69,29 @@ def is_gpu_available() -> bool:
     """Return True if a CUDA-capable GPU is available, otherwise False."""
     return torch.cuda.is_available()
 
+
+def get_ptxas_path(target: str) -> Path:
+    """
+    Return the bundled ``ptxas`` path for the requested target.
+
+    Blackwell targets use the dedicated assembler when it is available.
+    """
+    if target is None:
+        return _PTXAS_PATH
+
+    if isinstance(target, int):
+        target = f"sm_{target}"
+    elif not str(target).startswith("sm_"):
+        target = f"sm_{target}"
+
+    capability_match = re.match(r"sm_(\d+)", target)
+    assert capability_match is not None, f"Unexpected target: {target}"
+    capability = int(capability_match.group(1))
+
+    if capability >= 100 and _PTXAS_BLACKWELL_PATH.exists():
+        return _PTXAS_BLACKWELL_PATH
+
+    return _PTXAS_PATH
 
 def get_ptx_system_config() -> tuple[str, str, int]:
     """
