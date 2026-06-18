@@ -62,5 +62,5 @@ python3 -m ruff check --fix triton_ptx
 
 ## Notes
 
-- Test-time scaling archives each run under `database/<timestamp>/`.
+- Test-time scaling archives each run under `database/<timestamp>_<kernel>/`.
 - `measure_ptx` reads archived `output_winner_*.json` files and reports the best valid `speedup_vs_triton` found for each kernel.

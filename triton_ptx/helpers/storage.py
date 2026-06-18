@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import re
 import time
 from pathlib import Path
 
@@ -22,6 +23,12 @@ class BaseDatasetWriter(ABC):
             return f"{time.time_ns()}_{extra_message}.json"
 
         return f"{time.time_ns()}.json"
+
+
+def ensure_safe_folder_name(kernel_name: str) -> str:
+    """Make a kernel name safe to embed in a folder name."""
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "_", kernel_name).strip("_")
+    return slug or "kernel"
 
 class JsonDatasetWriter(BaseDatasetWriter):
     """Stores a dictionary as a JSON file inside the dataset folder."""

@@ -8,7 +8,7 @@ from triton_ptx.evaluation import TritonPTXCandidateEvaluator
 from triton_ptx.generator import AnthropicPrompt, OpenAIPrompt
 from triton_ptx.helpers.environment import get_ptx_system_config
 from triton_ptx.helpers.ptx import parse_ptx_signature
-from triton_ptx.helpers.storage import JsonDatasetWriter
+from triton_ptx.helpers.storage import JsonDatasetWriter, ensure_safe_folder_name
 from triton_ptx.helpers.triton import dump_kernel_ptx
 from triton_ptx.kernels import resolve_kernel
 from triton_ptx.prompts import build_prompt_for_operator
@@ -46,9 +46,9 @@ def run_test_time_scaling_loop(
     database_root = Path(database_root)
     database_root.mkdir(parents=True, exist_ok=True)
 
-    # Keep an immutable per-run archive in database/<timestamp>.
+    # Keep an immutable per-run archive in database/<timestamp>_<kernel>.
     run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_archive_root = database_root / run_timestamp
+    run_archive_root = database_root / f"{run_timestamp}_{ensure_safe_folder_name(kernel_cls.__name__)}"
     run_archive_root.mkdir(parents=True, exist_ok=True)
 
     print(f"Compiling baseline Triton PTX for {kernel_cls.__name__}")
