@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from openai import OpenAI
 from triton_ptx.evaluation import EvaluatedCandidate, TritonPTXCandidateEvaluator
-from triton_ptx.evaluation.sandbox import run_ptx_compilation
+from triton_ptx.evaluation.sandbox import compile_ptx
 from triton_ptx.generator.base import parse_response_text
 from triton_ptx.helpers.environment import get_ptx_system_config
 from triton_ptx.helpers.ptx import parse_ptx_signature
@@ -172,7 +172,7 @@ def compile_candidate(kernel_name: str, candidate: dict[str, Any] | str) -> dict
 
     log_json("COMPILING CANDIDATE PAYLOAD", payload)
 
-    result = run_ptx_compilation(kernel_cls, ptx_code=payload)
+    result = compile_ptx(payload)
     result = _json_safe(result)
 
     log_json("COMPILE RESULT", result)

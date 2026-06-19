@@ -7,9 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from triton_ptx.evaluation.sandbox import (
+    compile_ptx,
+    evaluate_ptx_performance,
     OutputVerifier,
-    PTXBenchmarkRunner,
-    run_ptx_compilation,
 )
 from triton_ptx.kernels.level2.matrix_scalar_addition import MatrixScalarAdditionKernel
 
@@ -158,7 +158,7 @@ def evaluate_config(
         },
     }
 
-    compile_result = run_ptx_compilation(MatrixScalarAdditionKernel, ptx_code=config)
+    compile_result = compile_ptx(config)
     report["compile"] = compile_result
     if not compile_result.get("success", False):
         return report
@@ -178,9 +178,10 @@ def evaluate_config(
     report["verification"] = _json_safe(verifier.last_report)
 
     if benchmark and report["correct"]:
-        runner = PTXBenchmarkRunner()
         inputs = operator.get_random_input(size=benchmark_size)
-        report["benchmark"] = _serialize_timings(runner.evaluate(operator, inputs))
+        report["benchmark"] = _serialize_timings(
+            evaluate_ptx_performance(operator, inputs)
+        )
 
     return report
 

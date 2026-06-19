@@ -12,8 +12,8 @@ from triton_ptx.helpers.kernels import instantiate_operator
 from triton_ptx.helpers.triton import clear_triton_cache
 from triton_ptx.evaluation.sandbox import (
     OutputVerifier,
-    PTXBenchmarkRunner,
-    run_ptx_compilation,
+    compile_ptx,
+    evaluate_ptx_performance,
 )
 
 
@@ -50,12 +50,11 @@ def benchmark_operator(operator):
     """
     Backward-compatible single-operator benchmarking entrypoint.
 
-    Returns the same metrics mapping as PTXBenchmarkRunner.evaluate(), including
+    Returns the same metrics mapping as evaluate_ptx_performance(), including
     a "ptx" Timing object used by triton_ptx.evaluation.
     """
-    runner = PTXBenchmarkRunner()
     inputs = operator.get_random_input()
-    return runner.evaluate(operator, inputs)
+    return evaluate_ptx_performance(operator, inputs)
 
 
 @dataclass(frozen=True)
@@ -228,7 +227,7 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
                 message=validation_error,
             )
 
-        compile_result = run_ptx_compilation(self.operator_cls, ptx_code=payload)
+        compile_result = compile_ptx(payload)
         compile_output = str(compile_result.get("output", "")).strip()
         compile_error = str(compile_result.get("error", "")).strip()
         compiles = bool(compile_result.get("success", False))

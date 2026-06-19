@@ -16,40 +16,29 @@ class Timing:
     p80: float
 
 
-class PTXBenchmarkRunner:
-    """Benchmark helper for a single operator with and without PTX overrides."""
+def benchmark(fn, quantiles=(0.2, 0.5, 0.8)) -> Timing:
+    p20, p50, p80 = triton.testing.do_bench(
+        fn,
+        quantiles=list(quantiles),
+    )
+    return Timing(p20, p50, p80)
 
-    def __init__(self, kernels=None):
-        self.kernels = list(kernels or [])
 
-    def benchmark(self, fn, quantiles=(0.2, 0.5, 0.8)) -> Timing:
-        p20, p50, p80 = triton.testing.do_bench(
-            fn,
-            quantiles=list(quantiles),
-        )
-        return Timing(p20, p50, p80)
+def evaluate_ptx_performance(op, inputs) -> dict[str, Timing | float | None]:
+    clear_triton_cache()
+    compiled_torch = torch.compile(op.forward_torch)
 
-    @staticmethod
-    def speedup(
-        baseline: Timing,
-        candidate: Timing | None,
-    ) -> float | None:
-        if candidate is None or candidate.p50 <= 0:
-            return None
-        return baseline.p50 / candidate.p50
+    triton_time = benchmark(lambda: op.forward_triton(inputs))
+    ptx_time = benchmark(lambda: op.forward_triton(inputs, ptx=True))
+    torch_time = benchmark(lambda: compiled_torch(inputs))
 
-    def evaluate(self, op, inputs) -> dict[str, Timing | float | None]:
-        clear_triton_cache()
-        compiled_torch = torch.compile(op.forward_torch)
+    ptx_speedup = None if ptx_time.p50 <= 0 else triton_time.p50 / ptx_time.p50
+    torch_speedup = None if torch_time.p50 <= 0 else triton_time.p50 / torch_time.p50
 
-        triton_time = self.benchmark(lambda: op.forward_triton(inputs))
-        ptx_time = self.benchmark(lambda: op.forward_triton(inputs, ptx=True))
-        torch_time = self.benchmark(lambda: compiled_torch(inputs))
-
-        return {
-            "triton": triton_time,
-            "ptx": ptx_time,
-            "torch": torch_time,
-            "ptx_speedup": self.speedup(triton_time, ptx_time),
-            "torch_speedup": self.speedup(triton_time, torch_time),
-        }
+    return {
+        "triton": triton_time,
+        "ptx": ptx_time,
+        "torch": torch_time,
+        "ptx_speedup": ptx_speedup,
+        "torch_speedup": torch_speedup,
+    }
