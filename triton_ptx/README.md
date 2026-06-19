@@ -28,6 +28,12 @@ Run test-time scaling for one kernel:
 python3 -m triton_ptx.test_time_scaling_loop AddKernel --config triton_ptx/configs/test_time_scaling_openai.yaml
 ```
 
+Run the deterministic fake AddKernel test-time-scaling loop:
+
+```bash
+python3 -m triton_ptx.test_time_scaling_loop AddKernel --config triton_ptx/configs/test_time_scaling_fake_add.yaml
+```
+
 Run an OpenAI tool-calling agent loop where the model can directly call local
 compile, correctness, and benchmark tools:
 

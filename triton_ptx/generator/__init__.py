@@ -1,6 +1,7 @@
 
 from .base import * # noqa: F403
 from .anthropic_prompt import AnthropicPrompt
+from .fake_add_prompt import FakeAddPrompt
 from .gemini_prompt import GeminiPrompt
 from .openai_prompt import OpenAIPrompt
 
@@ -12,6 +13,7 @@ def _get_generator_class(provider: str):
         "openai": OpenAIPrompt,
         "anthropic": AnthropicPrompt,
         "gemini": GeminiPrompt,
+        "fake_add": FakeAddPrompt,
     }
 
     try:
@@ -23,4 +25,3 @@ def _get_generator_class(provider: str):
 def build_prompter(provider: str, *, model: str | None = None, options: dict | None = None):
     init_kwargs = drop_none_values({"model": model, **(options or {})})
     return _get_generator_class(provider)(**init_kwargs)
-

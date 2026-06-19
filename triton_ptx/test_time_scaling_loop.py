@@ -71,6 +71,7 @@ def run_test_time_scaling_loop(
     *,
     config: DictConfig,
 ) -> Path:
+    config = OmegaConf.merge(OmegaConf.create(DEFAULT_CONFIG), config)
 
     kernel_cls = resolve_kernel(kernel_name)
 
