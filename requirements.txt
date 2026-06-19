@@ -1,4 +1,5 @@
 openai
 anthropic
+google-genai
 pytest
 torch

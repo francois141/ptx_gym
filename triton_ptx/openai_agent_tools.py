@@ -167,7 +167,6 @@ def get_kernel_prompt(kernel_name: str, num_answers: int = 1) -> dict[str, Any]:
 
 
 def compile_candidate(kernel_name: str, candidate: dict[str, Any] | str) -> dict[str, Any]:
-    kernel_cls = resolve_kernel(kernel_name)
     payload = _candidate_from_text_or_payload(candidate)
 
     log_json("COMPILING CANDIDATE PAYLOAD", payload)

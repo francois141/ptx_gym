@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from triton_ptx.evaluation import TritonPTXCandidateEvaluator
-from triton_ptx.generator import AnthropicPrompt, OpenAIPrompt
+from triton_ptx.generator import AnthropicPrompt, GeminiPrompt, OpenAIPrompt
 from triton_ptx.helpers.environment import get_ptx_system_config
 from triton_ptx.helpers.ptx import parse_ptx_signature
 from triton_ptx.helpers.storage import JsonDatasetWriter, ensure_safe_folder_name
@@ -31,6 +31,16 @@ def needs_compile_or_verification_retry(candidate) -> bool:
     )
 
 
+def build_prompter(provider: str):
+    if provider == "openai":
+        return OpenAIPrompt()
+    if provider == "anthropic":
+        return AnthropicPrompt()
+    if provider == "gemini":
+        return GeminiPrompt()
+    raise ValueError(f"Unsupported provider: {provider!r}")
+
+
 def run_test_time_scaling_loop(
     kernel_name: str,
     *,
@@ -38,7 +48,7 @@ def run_test_time_scaling_loop(
     k: int = 3,
     max_retries: int = 3,
     database_root: Path,
-    use_anthropic: bool = False,
+    provider: str = "openai",
 ) -> Path:
 
     kernel_cls = resolve_kernel(kernel_name)
@@ -57,7 +67,7 @@ def run_test_time_scaling_loop(
     version, target, address_size = get_ptx_system_config()
     (run_archive_root / "compiled_triton_kernel.ptx").write_text(baseline_ptx + "\n", encoding="utf-8")
 
-    prompter = AnthropicPrompt() if use_anthropic else OpenAIPrompt()
+    prompter = build_prompter(provider)
     evaluator = TritonPTXCandidateEvaluator(
         kernel_cls,
     )
@@ -186,10 +196,16 @@ def parse_args() -> argparse.Namespace:
         default="database",
         help="Root directory where archived run artifacts will be written.",
     )
-    parser.add_argument(
+    provider_group = parser.add_mutually_exclusive_group()
+    provider_group.add_argument(
         "--anthropic",
         action="store_true",
         help="Use the Anthropic endpoint with the Claude Opus 4.8 model.",
+    )
+    provider_group.add_argument(
+        "--gemini",
+        action="store_true",
+        help="Use the Gemini Developer API with the Gemini 2.5 Pro model.",
     )
     parser.add_argument("--keep-cache", action="store_true", help="Keep the Triton cache between candidates.")
     parser.add_argument("--no-dummy-ptrs", action="store_true", help="Do not request dummy pointer parameters.")
@@ -206,13 +222,19 @@ def main() -> None:
     if args.max_retries < 0:
         raise ValueError("--max-retries must be non-negative")
 
+    provider = "openai"
+    if args.anthropic:
+        provider = "anthropic"
+    elif args.gemini:
+        provider = "gemini"
+
     run_test_time_scaling_loop(
         args.kernel,
         rounds=args.rounds,
         k=args.k,
         max_retries=args.max_retries,
         database_root=args.database_dir,
-        use_anthropic=args.anthropic,
+        provider=provider,
     )
 
 

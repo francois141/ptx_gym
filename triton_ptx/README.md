@@ -41,6 +41,12 @@ Run test-time scaling against Anthropic Claude Opus 4.8:
 python3 -m triton_ptx.test_time_scaling_loop AddKernel --anthropic
 ```
 
+Run test-time scaling against Gemini 2.5 Pro:
+
+```bash
+python3 -m triton_ptx.test_time_scaling_loop AddKernel --gemini
+```
+
 Write test-time scaling artifacts to a custom database directory:
 
 ```bash
