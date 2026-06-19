@@ -1,5 +1,6 @@
 openai
 anthropic
 google-genai
+omegaconf
 pytest
 torch

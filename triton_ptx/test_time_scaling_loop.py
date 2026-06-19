@@ -4,16 +4,35 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
+from omegaconf import DictConfig, OmegaConf
+
 from triton_ptx.evaluation import TritonPTXCandidateEvaluator
-from triton_ptx.generator import AnthropicPrompt, GeminiPrompt, OpenAIPrompt
+from triton_ptx.generator import build_prompter
 from triton_ptx.helpers.environment import get_ptx_system_config
 from triton_ptx.helpers.ptx import parse_ptx_signature
 from triton_ptx.helpers.storage import JsonDatasetWriter, ensure_safe_folder_name
 from triton_ptx.helpers.triton import dump_kernel_ptx
 from triton_ptx.kernels import resolve_kernel
-from triton_ptx.prompts import build_prompt_for_operator
 from triton_ptx.prompts import build_follow_up_prompt_for_operator
+from triton_ptx.prompts import build_prompt_for_operator
 from triton_ptx.prompts import build_repair_prompt_for_operator
+
+DEFAULT_CONFIG = {
+    "loop": {
+        "rounds": 10,
+        "k": 2,
+        "max_retries": 3,
+    },
+    "generator": {
+        "provider": "openai",
+        "model": None,
+        "options": {},
+    },
+    "storage": {
+        "database_dir": "database",
+    },
+}
+
 
 def needs_compile_or_verification_retry(candidate) -> bool:
     if not candidate.compiles:
@@ -31,29 +50,34 @@ def needs_compile_or_verification_retry(candidate) -> bool:
     )
 
 
-def build_prompter(provider: str):
-    if provider == "openai":
-        return OpenAIPrompt()
-    if provider == "anthropic":
-        return AnthropicPrompt()
-    if provider == "gemini":
-        return GeminiPrompt()
-    raise ValueError(f"Unsupported provider: {provider!r}")
+def load_config(config_path: Path | str | None = None) -> DictConfig:
+    config = OmegaConf.create(DEFAULT_CONFIG)
+    if config_path is not None:
+        config = OmegaConf.merge(config, OmegaConf.load(config_path))
+    return config
+
+
+def validate_config(config: DictConfig) -> None:
+    if config.loop.rounds <= 0:
+        raise ValueError("loop.rounds must be positive")
+    if config.loop.k <= 0:
+        raise ValueError("loop.k must be positive")
+    if config.loop.max_retries < 0:
+        raise ValueError("loop.max_retries must be non-negative")
 
 
 def run_test_time_scaling_loop(
     kernel_name: str,
     *,
-    rounds: int = 10,
-    k: int = 3,
-    max_retries: int = 3,
-    database_root: Path,
-    provider: str = "openai",
+    config: DictConfig,
 ) -> Path:
 
     kernel_cls = resolve_kernel(kernel_name)
 
-    database_root = Path(database_root)
+    rounds = config.loop.rounds
+    k = config.loop.k
+    max_retries = config.loop.max_retries
+    database_root = Path(config.storage.database_dir)
     database_root.mkdir(parents=True, exist_ok=True)
 
     # Keep an immutable per-run archive in database/<timestamp>_<kernel>.
@@ -67,26 +91,30 @@ def run_test_time_scaling_loop(
     version, target, address_size = get_ptx_system_config()
     (run_archive_root / "compiled_triton_kernel.ptx").write_text(baseline_ptx + "\n", encoding="utf-8")
 
-    prompter = build_prompter(provider)
+    OmegaConf.save(config, run_archive_root / "config.yaml")
+
+    prompter = build_prompter(
+        config.generator.provider,
+        model=config.generator.model,
+        options=OmegaConf.to_container(config.generator.options, resolve=True) or {},
+    )
     evaluator = TritonPTXCandidateEvaluator(
         kernel_cls,
     )
     archive_writer = JsonDatasetWriter(dataset_dir=run_archive_root)
 
     current_prompt = build_prompt_for_operator(
-            kernel_cls,
-            num_answers=k,
-            version=version,
-            target=target,
-            address_size=address_size,
-            ptx_signature=ptx_signature,
-        )
-    
+        kernel_cls,
+        num_answers=k,
+        version=version,
+        target=target,
+        address_size=address_size,
+        ptx_signature=ptx_signature,
+    )
 
     (run_archive_root / "initial_prompt.md").write_text(current_prompt + "\n", encoding="utf-8")
 
     current_candidates = []
-
 
     for round_index in range(1, rounds + 1):
         print(f"=== Iteration {round_index} ===")
@@ -105,21 +133,19 @@ def run_test_time_scaling_loop(
 
             retry_index = 1
             while needs_compile_or_verification_retry(result) and retry_index <= max_retries:
-
                 if retry_index == 1:
                     repair_results.append(original_result)
 
                 repair_prompt = build_repair_prompt_for_operator(
-                        result,
-                        kernel_cls,
-                        retry_index=retry_index,
-                        max_retries=max_retries,
-                        version=version,
-                        target=target,
-                        address_size=address_size,
-                        ptx_signature=ptx_signature,
-                    )
-                
+                    result,
+                    kernel_cls,
+                    retry_index=retry_index,
+                    max_retries=max_retries,
+                    version=version,
+                    target=target,
+                    address_size=address_size,
+                    ptx_signature=ptx_signature,
+                )
 
                 repair_prompt_name = (
                     f"repair_prompt_iteration_{round_index}"
@@ -134,7 +160,7 @@ def run_test_time_scaling_loop(
                     repair_prompt,
                     num_answers=1,
                 )[0]
-                
+
                 result = evaluator.evaluate(
                     repaired_answer,
                     round_index=round_index,
@@ -159,15 +185,14 @@ def run_test_time_scaling_loop(
         archive_writer.store(f"winner_{round_index}", [winner])
 
         follow_up_prompt = build_follow_up_prompt_for_operator(
-                current_candidates,
-                kernel_cls,
-                num_answers=k,
-                version=version,
-                target=target,
-                address_size=address_size,
-                ptx_signature=ptx_signature,
-            )
-        
+            current_candidates,
+            kernel_cls,
+            num_answers=k,
+            version=version,
+            target=target,
+            address_size=address_size,
+            ptx_signature=ptx_signature,
+        )
 
         archive_follow_up_path = run_archive_root / f"follow_up_iteration_{round_index}.md"
         archive_follow_up_path.write_text(follow_up_prompt + "\n", encoding="utf-8")
@@ -182,59 +207,24 @@ def parse_args() -> argparse.Namespace:
         description="Run a manual per-kernel PTX test-time scaling loop."
     )
     parser.add_argument("kernel", help="Kernel class name, for example AddKernel.")
-    parser.add_argument("--rounds", type=int, default=10, help="Number of test-time scaling rounds.")
-    parser.add_argument("--k", type=int, default=2, help="Sample size for best-of-k candidate selection.")
     parser.add_argument(
-        "--max-retries",
-        type=int,
-        default=3,
-        help="Maximum isolated repair attempts per failed candidate.",
-    )
-    parser.add_argument(
-        "--database-dir",
+        "--config",
         type=Path,
-        default="database",
-        help="Root directory where archived run artifacts will be written.",
+        help="OmegaConf YAML configuration path. If omitted, the in-file default config is used.",
     )
-    provider_group = parser.add_mutually_exclusive_group()
-    provider_group.add_argument(
-        "--anthropic",
-        action="store_true",
-        help="Use the Anthropic endpoint with the Claude Opus 4.8 model.",
-    )
-    provider_group.add_argument(
-        "--gemini",
-        action="store_true",
-        help="Use the Gemini Developer API with the Gemini 2.5 Pro model.",
-    )
-    parser.add_argument("--keep-cache", action="store_true", help="Keep the Triton cache between candidates.")
-    parser.add_argument("--no-dummy-ptrs", action="store_true", help="Do not request dummy pointer parameters.")
-    parser.add_argument("--extra-instructions", help="Additional instructions to append to prompts.")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    if args.rounds <= 0:
-        raise ValueError("--rounds must be positive")
-    if args.k <= 0:
-        raise ValueError("--k must be positive")
-    if args.max_retries < 0:
-        raise ValueError("--max-retries must be non-negative")
+    config = load_config(args.config)
+    validate_config(config)
 
-    provider = "openai"
-    if args.anthropic:
-        provider = "anthropic"
-    elif args.gemini:
-        provider = "gemini"
+    config = OmegaConf.create(OmegaConf.to_container(config, resolve=True))
 
     run_test_time_scaling_loop(
         args.kernel,
-        rounds=args.rounds,
-        k=args.k,
-        max_retries=args.max_retries,
-        database_root=args.database_dir,
-        provider=provider,
+        config=config,
     )
 
 

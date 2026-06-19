@@ -25,7 +25,7 @@ python3 -m pytest triton_ptx
 Run test-time scaling for one kernel:
 
 ```bash
-python3 -m triton_ptx.test_time_scaling_loop AddKernel
+python3 -m triton_ptx.test_time_scaling_loop AddKernel --config triton_ptx/configs/test_time_scaling_openai.yaml
 ```
 
 Run an OpenAI tool-calling agent loop where the model can directly call local
@@ -38,20 +38,49 @@ python3 -m triton_ptx.openai_agent_tools MatrixMultiplicationKernel
 Run test-time scaling against Anthropic Claude Opus 4.8:
 
 ```bash
-python3 -m triton_ptx.test_time_scaling_loop AddKernel --anthropic
+python3 -m triton_ptx.test_time_scaling_loop AddKernel --config triton_ptx/configs/test_time_scaling_anthropic.yaml
 ```
 
 Run test-time scaling against Gemini 2.5 Pro:
 
 ```bash
-python3 -m triton_ptx.test_time_scaling_loop AddKernel --gemini
+python3 -m triton_ptx.test_time_scaling_loop AddKernel --config triton_ptx/configs/test_time_scaling_gemini.yaml
 ```
 
 Write test-time scaling artifacts to a custom database directory:
 
 ```bash
-python3 -m triton_ptx.test_time_scaling_loop AddKernel --database-dir database
+python3 -m triton_ptx.test_time_scaling_loop AddKernel --config path/to/config.yaml
 ```
+
+The test-time scaling command expects the kernel class name first and an
+optional OmegaConf YAML path via `--config`. If `--config` is omitted, the
+in-file default config in `triton_ptx/test_time_scaling_loop.py` is used.
+
+The config controls loop parameters, generator selection, model settings, and
+the archive directory:
+
+```yaml
+loop:
+  rounds: 10
+  k: 2
+  max_retries: 3
+
+generator:
+  provider: openai
+  model: gpt-5
+  options:
+    reasoning_effort: medium
+
+storage:
+  database_dir: database
+```
+
+Three ready-to-edit presets live in `triton_ptx/configs/`:
+
+- `test_time_scaling_openai.yaml`
+- `test_time_scaling_anthropic.yaml`
+- `test_time_scaling_gemini.yaml`
 
 Extract embedded PTX from Triton kernels:
 
