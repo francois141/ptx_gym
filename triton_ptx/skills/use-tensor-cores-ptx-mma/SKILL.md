@@ -27,6 +27,22 @@ When the user asks for Tensor Cores and does not specify precision:
 - Use TF32 on Ampere+ when starting from FP32 and preserving an FP32-like workflow matters more than maximum throughput.
 - Do not invent nonstandard datatypes such as `float19`.
 
+## Alignment, Synchronization, and Layout Constraints
+
+To successfully use `mma.sync.aligned` and `ldmatrix.sync.aligned`, kernels must strictly adhere to the following hardware requirements:
+
+### 1. Memory Alignment
+- **Shared Memory:** The shared memory addresses passed to `ldmatrix` **must** be 16-byte (128-bit) aligned.
+- **Global Memory:** While not strictly enforced by `ldmatrix` (which reads from shared memory), global-to-shared memory loads should use vectorized instructions (e.g., `float4`, `int4`, or `cp.async`) requiring 16-byte alignment to achieve necessary bandwidth.
+
+### 2. Warp Synchronization
+- **Warp Uniformity:** Instructions suffixed with `.sync` (both `mma.sync` and `ldmatrix.sync`) are warp-synchronous. **All 32 active threads** in the warp must execute the instruction simultaneously. Do not place these instructions inside divergent control flow branches.
+- **Block Synchronization:** You must ensure data is fully visible before reading. Issue a `__syncthreads()` (or appropriate async copy barriers) between writing global data into shared memory and reading it via `ldmatrix`.
+
+### 3. Shared Memory Bank Conflicts (Swizzling)
+- `ldmatrix` issues memory accesses that can cause severe shared memory bank conflicts if data is stored in a naive linear layout. 
+- You must apply **memory swizzling** (e.g., XORing the row and column indices) when writing tiles to shared memory to ensure conflict-free `ldmatrix` reads.
+
 ## PTX MMA Pattern
 
 For warp-level FP16/BF16 MMA, structure kernels around:
