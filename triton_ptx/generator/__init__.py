@@ -4,6 +4,7 @@ from .anthropic_prompt import AnthropicPrompt
 from .fake_add_prompt import FakeAddPrompt
 from .gemini_prompt import GeminiPrompt
 from .openai_prompt import OpenAIPrompt
+from .openrouter_prompt import OpenRouterPrompt
 
 def drop_none_values(options: dict) -> dict:
     return {key: value for key, value in options.items() if value is not None}
@@ -11,6 +12,7 @@ def drop_none_values(options: dict) -> dict:
 def _get_generator_class(provider: str):
     generators = {
         "openai": OpenAIPrompt,
+        "openrouter": OpenRouterPrompt,
         "anthropic": AnthropicPrompt,
         "gemini": GeminiPrompt,
         "fake_add": FakeAddPrompt,
