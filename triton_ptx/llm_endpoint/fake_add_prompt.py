@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .base import ResponseGenerator
+from .base import LLMEndpoint
 
 
 ADD_KERNEL_PTX = """.version 8.7
@@ -137,7 +137,7 @@ ADD_KERNEL_PAYLOAD = {
 }
 
 
-class FakeAddPrompt(ResponseGenerator):
+class FakeAddPrompt(LLMEndpoint):
     """Deterministic fake endpoint for the AddKernel test-time-scaling path."""
 
     def __init__(self, model: str | None = None, kernel_name: str = "AddKernel"):

@@ -7,7 +7,7 @@ from pathlib import Path
 from omegaconf import DictConfig, OmegaConf
 
 from triton_ptx.evaluation import TritonPTXCandidateEvaluator
-from triton_ptx.generator import build_prompter
+from triton_ptx.llm_endpoint import create_llm_endpoint
 from triton_ptx.helpers.environment import get_ptx_system_config
 from triton_ptx.helpers.ptx import parse_ptx_signature
 from triton_ptx.helpers.storage import JsonDatasetWriter, ensure_safe_folder_name
@@ -94,7 +94,7 @@ def run_test_time_scaling_loop(
 
     OmegaConf.save(config, run_archive_root / "config.yaml")
 
-    prompter = build_prompter(
+    prompter = create_llm_endpoint(
         config.generator.provider,
         model=config.generator.model,
         options=OmegaConf.to_container(config.generator.options, resolve=True) or {},

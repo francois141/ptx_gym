@@ -3,7 +3,7 @@ import ast
 import json
 
 
-class ResponseGenerator(ABC):
+class LLMEndpoint(ABC):
 
     @abstractmethod
     def generate_response(self, prompt: str, *, num_answers: int | None = None) -> list[dict]:

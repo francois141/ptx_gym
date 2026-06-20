@@ -9,7 +9,7 @@ from typing import Any, Callable
 from openai import OpenAI
 from triton_ptx.evaluation import EvaluatedCandidate, TritonPTXCandidateEvaluator
 from triton_ptx.evaluation.sandbox import compile_ptx
-from triton_ptx.generator.base import parse_response_text
+from triton_ptx.llm_endpoint.base import parse_response_text
 from triton_ptx.helpers.environment import get_ptx_system_config
 from triton_ptx.helpers.ptx import parse_ptx_signature
 from triton_ptx.helpers.triton import dump_kernel_ptx
