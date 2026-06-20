@@ -53,6 +53,8 @@ def compile_ptx(ptx_code):
         command = [
             str(ptxas_path),
             f"-arch={target}",
+            "-v",
+            "--warning-as-error",
             str(ptx_path),
             "-o",
             str(cubin_path),

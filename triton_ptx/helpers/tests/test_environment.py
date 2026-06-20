@@ -54,6 +54,8 @@ def test_compile_ptx(monkeypatch):
     assert result["success"] is True
     assert result["sm"] == "sm_90"
     assert calls["command"][1] == "-arch=sm_90"
+    assert "-v" in calls["command"]
+    assert "--warning-as-error" in calls["command"]
 
 
 @pytest.mark.skipif(
