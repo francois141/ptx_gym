@@ -2,10 +2,10 @@ import os
 
 from openai import OpenAI
 
-from .base import ResponseGenerator, parse_response_text
+from .base import LLMEndpoint, parse_response_text
 
 
-class OpenRouterPrompt(ResponseGenerator):
+class OpenRouterPrompt(LLMEndpoint):
     DEFAULT_MODEL = "qwen/qwen3-coder"
     BASE_URL = "https://openrouter.ai/api/v1"
 

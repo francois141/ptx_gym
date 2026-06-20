@@ -2,16 +2,16 @@ import sys
 
 import pytest
 
-import triton_ptx.generator as generator_factory
+import triton_ptx.llm_endpoint as llm_endpoint_factory
 from triton_ptx import test_time_scaling_loop as tts
 
 
 def test_build_prompter_selects_gemini(monkeypatch):
     sentinel = object()
 
-    monkeypatch.setattr(generator_factory, "_get_generator_class", lambda provider: lambda **kwargs: sentinel)
+    monkeypatch.setattr(llm_endpoint_factory, "_get_llm_endpoint_class", lambda provider: lambda **kwargs: sentinel)
 
-    assert generator_factory.build_prompter("gemini") is sentinel
+    assert llm_endpoint_factory.create_llm_endpoint("gemini") is sentinel
 
 
 def test_build_prompter_passes_model_and_options(monkeypatch):
@@ -21,9 +21,9 @@ def test_build_prompter_passes_model_and_options(monkeypatch):
         captured.update(kwargs)
         return object()
 
-    monkeypatch.setattr(generator_factory, "_get_generator_class", lambda provider: fake_openai_prompt)
+    monkeypatch.setattr(llm_endpoint_factory, "_get_llm_endpoint_class", lambda provider: fake_openai_prompt)
 
-    generator_factory.build_prompter(
+    llm_endpoint_factory.create_llm_endpoint(
         "openai",
         model="gpt-5-mini",
         options={"reasoning_effort": "low", "unused": None},
@@ -37,7 +37,7 @@ def test_build_prompter_passes_model_and_options(monkeypatch):
 
 def test_build_prompter_rejects_unknown_provider():
     with pytest.raises(ValueError, match="Unsupported provider"):
-        generator_factory.build_prompter("unknown")
+        llm_endpoint_factory.create_llm_endpoint("unknown")
 
 
 def test_parse_args_accepts_config_path(monkeypatch):

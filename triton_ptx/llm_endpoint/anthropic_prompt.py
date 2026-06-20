@@ -1,44 +1,53 @@
-from .base import ResponseGenerator, parse_response_text
+from anthropic import Anthropic
+
+from .base import LLMEndpoint, parse_response_text
 
 
-class GeminiPrompt(ResponseGenerator):
-    DEFAULT_MODEL = "gemini-2.5-pro"
+class AnthropicPrompt(LLMEndpoint):
+    DEFAULT_MODEL = "claude-opus-4-8"
 
-    def __init__(self, model=None, max_output_tokens=8192):
+    PRICING_PER_1M_TOKENS = {
+        # Price estimates in USD per 1M tokens.
+        # Keep these aligned with Anthropic API pricing.
+        "claude-opus-4-8": {
+            "input": 15.00,
+            "output": 75.00,
+        },
+        "claude-opus-4": {
+            "input": 15.00,
+            "output": 75.00,
+        },
+        "claude-sonnet-4": {
+            "input": 3.00,
+            "output": 15.00,
+        },
+    }
+
+    def __init__(self, model=None, max_tokens=8192):
         self.model = model or self.DEFAULT_MODEL
-        self.max_output_tokens = max_output_tokens
-        self._types = None
-        self.client = self._build_client()
-
-    def _build_client(self):
-        try:
-            from google import genai
-            from google.genai import types
-        except ImportError as exc:
-            raise ImportError(
-                "Gemini support requires the `google-genai` package."
-            ) from exc
-
-        self._types = types
-        return genai.Client()
+        self.max_tokens = max_tokens
+        self.client = Anthropic()
 
     def _estimate_cost(self, response):
-        # Pricing is model-dependent and changes independently from the SDK.
-        # Return None unless the project chooses to maintain a pricing table.
-        return None
+        pricing = self.PRICING_PER_1M_TOKENS.get(self.model)
+        usage = getattr(response, "usage", None)
+
+        if pricing is None or usage is None:
+            return None
+
+        input_tokens = getattr(usage, "input_tokens", 0) or 0
+        output_tokens = getattr(usage, "output_tokens", 0) or 0
+
+        return (
+            input_tokens * pricing["input"]
+            + output_tokens * pricing["output"]
+        ) / 1_000_000
 
     def _extract_text(self, response):
-        text = getattr(response, "text", None)
-        if text:
-            return text
-
         parts = []
-        for candidate in getattr(response, "candidates", []) or []:
-            content = getattr(candidate, "content", None)
-            for part in getattr(content, "parts", []) or []:
-                part_text = getattr(part, "text", None)
-                if part_text:
-                    parts.append(part_text)
+        for block in getattr(response, "content", []) or []:
+            if getattr(block, "type", None) == "text":
+                parts.append(block.text)
         return "\n".join(parts)
 
     def generate_response(self, prompt, *, num_answers=None):
@@ -56,17 +65,13 @@ class GeminiPrompt(ResponseGenerator):
         total_cost = 0.0
         cost_available = True
 
-        config = self._types.GenerateContentConfig(
-            candidate_count=1,
-            max_output_tokens=self.max_output_tokens,
-            response_mime_type="application/json",
-        )
-
         while len(all_answers) < requested:
-            response = self.client.models.generate_content(
+            response = self.client.messages.create(
                 model=self.model,
-                contents=prompt,
-                config=config,
+                max_tokens=self.max_tokens,
+                messages=[
+                    {"role": "user", "content": prompt},
+                ],
             )
 
             cost = self._estimate_cost(response)

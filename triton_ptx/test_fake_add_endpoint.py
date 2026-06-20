@@ -9,8 +9,8 @@ from omegaconf import OmegaConf
 import triton_ptx.evaluation.evaluate as evaluate_module
 from triton_ptx.evaluation.sandbox.evaluation import Timing
 from triton_ptx.evaluation.sandbox.verification import OutputVerifier
-from triton_ptx.generator import build_prompter
-from triton_ptx.generator.fake_add_prompt import ADD_KERNEL_PTX
+from triton_ptx.llm_endpoint import create_llm_endpoint
+from triton_ptx.llm_endpoint.fake_add_prompt import ADD_KERNEL_PTX
 from triton_ptx import test_time_scaling_loop as tts
 
 
@@ -33,7 +33,7 @@ def _sm89_available() -> bool:
 
 def test_fake_add_endpoint_rejects_non_add_kernel():
     with pytest.raises(ValueError, match="only supports AddKernel"):
-        build_prompter(
+        create_llm_endpoint(
             "fake_add",
             options={
                 "kernel_name": "ReLUKernel",

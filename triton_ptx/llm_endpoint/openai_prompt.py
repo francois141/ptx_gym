@@ -1,9 +1,9 @@
 from openai import OpenAI
 
-from .base import ResponseGenerator, parse_response_text
+from .base import LLMEndpoint, parse_response_text
 
 
-class OpenAIPrompt(ResponseGenerator):
+class OpenAIPrompt(LLMEndpoint):
     DEFAULT_MODEL = "gpt-5"
     ALLOWED_REASONING_EFFORTS = {None, "minimal", "low", "medium", "high"}
 
