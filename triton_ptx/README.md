@@ -82,11 +82,16 @@ storage:
   database_dir: database
 ```
 
-Three ready-to-edit presets live in `triton_ptx/configs/`:
+Ready-to-edit presets live in `triton_ptx/configs/`:
 
 - `test_time_scaling_openai.yaml`
 - `test_time_scaling_anthropic.yaml`
 - `test_time_scaling_gemini.yaml`
+- `test_time_scaling_openrouter.yaml`
+
+The OpenRouter preset expects `OPENROUTER_API_KEY` in the environment. The
+`openrouter` provider includes a small price table for these model IDs:
+`qwen/qwen3-coder` and `deepseek/deepseek-v4-pro`.
 
 Extract embedded PTX from Triton kernels:
 
