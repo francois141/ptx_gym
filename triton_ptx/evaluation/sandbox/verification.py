@@ -82,7 +82,7 @@ class OutputVerifier(BaseVerifier):
 
         return actual == expected
 
-    def _bad_indices(self, actual, expected):
+    def _bad_mask(self, actual, expected):
         expected = expected.to(actual.dtype)
 
         ok = torch.isclose(
@@ -93,16 +93,53 @@ class OutputVerifier(BaseVerifier):
             equal_nan=True,
         )
 
-        return (~ok).nonzero(as_tuple=False)[: self.max_print]
+        return ~ok
+
+    def _bad_indices(self, actual, expected, limit=None):
+        bad = self._bad_mask(actual, expected).nonzero(as_tuple=False)
+        if limit is None:
+            return bad
+        return bad[:limit]
+
+    def _tensor_summary(self, x):
+        return {
+            "shape": tuple(x.shape),
+            "dtype": str(x.dtype),
+            "device": str(x.device),
+        }
+
+    def _error_stats(self, actual, expected, mask=None):
+        expected = expected.to(actual.dtype)
+        actual64 = actual.detach().to(torch.float64)
+        expected64 = expected.detach().to(torch.float64)
+        abs_error = torch.abs(actual64 - expected64)
+        rel_denom = torch.clamp(
+            torch.abs(expected64),
+            min=torch.finfo(torch.float64).eps,
+        )
+        rel_error = abs_error / rel_denom
+
+        if mask is not None:
+            abs_error = abs_error[mask]
+            rel_error = rel_error[mask]
+        if abs_error.numel() == 0:
+            return {
+                "max_abs_error": 0.0,
+                "mean_abs_error": 0.0,
+                "max_relative_error": 0.0,
+                "mean_relative_error": 0.0,
+            }
+
+        return {
+            "max_abs_error": abs_error.max().detach().cpu().item(),
+            "mean_abs_error": abs_error.mean().detach().cpu().item(),
+            "max_relative_error": rel_error.max().detach().cpu().item(),
+            "mean_relative_error": rel_error.mean().detach().cpu().item(),
+        }
 
     def _dump(self, x):
         if isinstance(x, torch.Tensor):
-            return {
-                "shape": tuple(x.shape),
-                "dtype": str(x.dtype),
-                "device": str(x.device),
-                "values": x.detach().cpu(),
-            }
+            return self._tensor_summary(x)
 
         if isinstance(x, (list, tuple)):
             return [self._dump(v) for v in x]
@@ -122,20 +159,21 @@ class OutputVerifier(BaseVerifier):
         expected_out,
         expected_name="ptx",
     ):
-        expected_output_key = f"{expected_name}_output"
         report = {
             "status": "failed",
             "seed": self.seed,
             "size": size,
             "iteration": iteration,
             "kwargs": kwargs,
-            "inputs": self._dump(inputs),
-            "triton_output": self._dump(triton_out),
-            expected_output_key: self._dump(expected_out),
         }
 
         if not isinstance(expected_out, torch.Tensor) or not isinstance(triton_out, torch.Tensor):
+            report[f"{expected_name}_output"] = self._dump(expected_out)
+            report["triton_output"] = self._dump(triton_out)
             return report
+
+        report[f"{expected_name}_output"] = self._tensor_summary(expected_out)
+        report["triton_output"] = self._tensor_summary(triton_out)
 
         if expected_out.shape != triton_out.shape:
             report["error"] = {
@@ -145,8 +183,14 @@ class OutputVerifier(BaseVerifier):
             }
             return report
 
-        bad = self._bad_indices(expected_out, triton_out)
+        bad_mask = self._bad_mask(expected_out, triton_out)
+        bad = self._bad_indices(expected_out, triton_out, limit=self.max_print)
         report["wrong_indices"] = bad.cpu()
+        report["num_wrong"] = int(bad_mask.sum().detach().cpu().item())
+        report["error_stats"] = {
+            "all_values": self._error_stats(triton_out, expected_out),
+            "wrong_values": self._error_stats(triton_out, expected_out, bad_mask),
+        }
         report["wrong_values"] = [
             {
                 "index": tuple(idx.tolist()),
