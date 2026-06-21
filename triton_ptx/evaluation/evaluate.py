@@ -377,14 +377,14 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
             ):
                 return f'Candidate payload field "{key}" must be a positive integer when present.'
 
-        thread_sum = sum(
-            payload.get(key, 0)
+        total_threads = math.prod(
+            payload.get(key, 1)
             for key in ("num_threads_x", "num_threads_y", "num_threads_z")
         )
-        if thread_sum != 128:
+        if total_threads != 128:
             return (
-                "Candidate payload thread dimensions must sum to 128 "
-                f"(got {thread_sum})."
+                "Candidate payload thread dimensions must multiply to 128 "
+                f"(got {total_threads})."
             )
 
         return None
