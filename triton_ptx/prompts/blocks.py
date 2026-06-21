@@ -265,7 +265,7 @@ ptx_kernel = {
 - put the PTX code directly under the top-level `"ptx"` key;
 - include `"num_threads_x"` as a positive Python integer literal for every answer;
 - include `"num_threads_y"` and `"num_threads_z"` only when the kernel needs a multi-dimensional CTA shape;
-- query `num_warps` from the kernel and make the sum of included thread dimensions exactly `32 * num_warps = __TOTAL_THREADS__`, treating omitted `"num_threads_y"` and `"num_threads_z"` as 0;
+- query `num_warps` from the kernel and make the sum of included thread dimensions exactly `32 * num_warps = __TOTAL_THREADS__`, treating omitted `"num_threads_y"` and `"num_threads_z"` as 1;
 - do not include tl.constexpr parameters in the dictionary; the operator defaults are used when launching the PTX kernel;
 - make the PTX string valid PTX;
 - include concise human-readable PTX comments that explain the logic and each logical instruction group;
@@ -283,7 +283,4 @@ The following syntax is invalid:
 The following syntax is valid
 
 @p_warp0 setp.lt.u32 pvalid, rLane, 8;
-
-
-AS LONG AS THE MATRIX DOESN'T HAVE TENSOR CORES TO DO THE MATRIX MULTIPLICATION, YOU SHOULD CONTINUE THE PROMPT. THIS IS REALLY ESSENTIAL TO HAVE TENSOR CORES, YOU CAN CONVERT TO FLOAT16 OR 19 TO GET THE TENSOR CORE BUT HAVE THEM BEFORE RETURNING ANTYHING VALID.
 """.replace("__TOTAL_THREADS__", str(total_threads)).strip()

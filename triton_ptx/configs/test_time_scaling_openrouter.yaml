@@ -1,7 +1,7 @@
 loop:
   rounds: 10
   k: 2
-  max_retries: 3
+  max_retries: 25
 
 generator:
   provider: openrouter
