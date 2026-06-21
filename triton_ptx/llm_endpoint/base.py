@@ -38,11 +38,18 @@ def parse_response_text(text: str) -> list[dict]:
         raise ValueError(f"Parsed response is not JSON-serializable: {e}") from e
 
     if isinstance(obj, dict):
+        if "ptx_kernel" in obj and isinstance(obj["ptx_kernel"], dict):
+            return [obj["ptx_kernel"]]
+
         if "ptx" in obj:
             return [obj]
+
         answers = obj.get("answers")
         if not isinstance(answers, list):
-            raise ValueError("Response dictionary must contain either a 'ptx' key or an 'answers' list.")
+            raise ValueError(
+                "Response dictionary must contain either a 'ptx' key, "
+                "a 'ptx_kernel' dictionary, or an 'answers' list."
+            )
         obj = answers
 
     if not isinstance(obj, list):

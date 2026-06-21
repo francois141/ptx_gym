@@ -94,3 +94,5 @@ class MatrixMultiplicationKernel(TritonPTXKernel):
     def forward_torch(self, inputs):
         a, b = inputs
         return torch.matmul(a, b)
+
+#/usr/local/cuda/bin/compute-sanitizer --tool memcheck python3 -m triton_ptx.test_time_scaling_loop MatrixMultiplicationKernel --config triton_ptx/configs/test_time_scaling_openai.yaml
