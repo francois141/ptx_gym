@@ -106,6 +106,12 @@ python3 -m triton_ptx.extract_ptx
 python3 -m triton_ptx.measure_ptx --database-dir /path/to/database
 ```
 
+Re-run compile, correctness, and benchmark measurement for one archived result:
+
+```bash
+python3 -m triton_ptx.remeasure_candidate PATH --output output.json
+```
+
 Lint the package:
 
 ```bash
