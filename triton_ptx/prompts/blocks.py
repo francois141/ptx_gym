@@ -249,12 +249,9 @@ def output_contract(spec):
 
 Return only a Python snippet that defines one answer dictionary named `ptx_kernel`.
 
-The output must be:
+The output must follow this format:
 
-- assign exactly one top-level variable named `ptx_kernel`;
-- use this shape:
-
-ptx_kernel = {
+{
     "ptx": \"\"\"<valid PTX code>\"\"\",
     "num_threads_x": <required_threads_x>,
     "num_threads_y": <optional_threads_y>,
