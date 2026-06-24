@@ -70,6 +70,18 @@ def is_gpu_available() -> bool:
     return torch.cuda.is_available()
 
 
+def resolve_git_commit_hash() -> str:
+    """Return the current Git commit hash, or ``"unknown"`` outside a Git checkout."""
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except Exception:
+        return "unknown"
+
+
 def get_ptxas_path(target: str) -> Path:
     """
     Return the bundled ``ptxas`` path for the requested target.
@@ -92,6 +104,7 @@ def get_ptxas_path(target: str) -> Path:
         return _PTXAS_BLACKWELL_PATH
 
     return _PTXAS_PATH
+
 
 def get_ptx_system_config() -> tuple[str, str, int]:
     """

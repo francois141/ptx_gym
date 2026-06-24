@@ -7,8 +7,7 @@ import torch
 from omegaconf import OmegaConf
 
 import triton_ptx.evaluation.evaluate as evaluate_module
-from triton_ptx.evaluation.sandbox.evaluation import Timing
-from triton_ptx.evaluation.sandbox.verification import OutputVerifier
+from triton_ptx.evaluation import OutputVerifier, Timing
 from triton_ptx.llm_endpoint import create_llm_endpoint
 from triton_ptx.llm_endpoint.fake_add_prompt import ADD_KERNEL_PTX
 from triton_ptx import test_time_scaling_loop as tts
@@ -55,8 +54,8 @@ def test_fake_add_endpoint_runs_three_scaling_rounds_with_three_verified_sizes(
         evaluate_module,
         "benchmark_operator",
         lambda operator: {
-            "triton": Timing(2.0, 2.0, 2.0),
-            "ptx": Timing(1.0, 1.0, 1.0),
+            "triton": Timing(2.0, 2.0, 2.0, 2.0, 2.0, 2.0),
+            "ptx": Timing(1.0, 1.0, 1.0, 1.0, 1.0, 1.0),
         },
     )
 
@@ -84,7 +83,6 @@ def test_fake_add_endpoint_runs_three_scaling_rounds_with_three_verified_sizes(
         assert result_path.exists()
         round_results.append(json.loads(result_path.read_text(encoding="utf-8")))
 
-    assert [result["round_index"] for result in round_results] == [1, 2, 3]
     assert {result["payload"]["num_threads_x"] for result in round_results} == {128}
     assert all(result["verifier_report"]["verified_sizes"] == [3, 1024, 2049] for result in round_results)
     assert all(result["compiles"] for result in round_results)

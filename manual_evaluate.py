@@ -6,11 +6,10 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
 
-from triton_ptx.evaluation.sandbox import (
-    compile_ptx,
-    evaluate_ptx_performance,
-    OutputVerifier,
-)
+from triton_ptx.evaluation import Payload
+from triton_ptx.evaluation.compilation import compile_ptx
+from triton_ptx.evaluation.performance import evaluate_ptx_performance
+from triton_ptx.evaluation.verification import OutputVerifier
 from triton_ptx.kernels.level2.matrix_scalar_addition import MatrixScalarAdditionKernel
 
 
@@ -158,9 +157,9 @@ def evaluate_config(
         },
     }
 
-    compile_result = compile_ptx(config)
-    report["compile"] = compile_result
-    if not compile_result.get("success", False):
+    compile_result = compile_ptx(Payload.from_input(config))
+    report["compile"] = compile_result.to_dict()
+    if not compile_result.compiles:
         return report
 
     operator = MatrixScalarAdditionKernel(
