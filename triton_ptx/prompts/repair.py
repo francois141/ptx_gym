@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from triton_ptx.evaluation import EvaluatedCandidate
 from triton_ptx.helpers.kernels import extract_specification_from_operator
+from triton_ptx.kernels.base import TritonPTXKernel
 from triton_ptx.prompts.blocks import (
     commenting_rules,
     correctness_rules,
@@ -83,7 +84,7 @@ def prompt_builder(
 
 def build_repair_prompt_for_operator(
     failed_candidate: EvaluatedCandidate,
-    operator_cls: type,
+    operator_cls: type[TritonPTXKernel],
     *,
     retry_index: int,
     max_retries: int,

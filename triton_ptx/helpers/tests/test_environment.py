@@ -2,8 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from triton_ptx.evaluation.sandbox import compilation
-from triton_ptx.evaluation.sandbox.compilation import compile_ptx
+from triton_ptx.evaluation import compilation
+from triton_ptx.evaluation.compilation import compile_ptx
+from triton_ptx.evaluation.types import Payload
 from triton_ptx.helpers import environment
 from triton_ptx.helpers.environment import (
     get_ptx_system_config,
@@ -49,10 +50,11 @@ def test_compile_ptx(monkeypatch):
     monkeypatch.setattr(compilation, "get_ptxas_path", lambda target=None: Path("/fake/ptxas"))
     monkeypatch.setattr(compilation.subprocess, "run", fake_run)
 
-    result = compile_ptx(".version 8.0\n")
+    result = compile_ptx(Payload(ptx=".version 8.0\n", threads_x=128))
 
-    assert result["success"] is True
-    assert result["sm"] == "sm_90"
+    assert result.compiles is True
+    assert result.sm == "sm_90"
+    assert result.flags == ["-arch=sm_90", "-v", "--warning-as-error", "-o"]
     assert calls["command"][1] == "-arch=sm_90"
     assert "-v" in calls["command"]
     assert "--warning-as-error" in calls["command"]

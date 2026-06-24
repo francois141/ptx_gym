@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from openai import OpenAI
-from triton_ptx.evaluation import EvaluatedCandidate, TritonPTXCandidateEvaluator
-from triton_ptx.evaluation.sandbox import compile_ptx
+from triton_ptx.evaluation import EvaluatedCandidate, Payload, TritonPTXCandidateEvaluator
+from triton_ptx.evaluation import compile_ptx
 from triton_ptx.llm_endpoint.base import parse_response_text
 from triton_ptx.helpers.environment import get_ptx_system_config
 from triton_ptx.helpers.ptx import parse_ptx_signature
@@ -97,15 +97,28 @@ def _json_safe(value: Any) -> Any:
         return str(value)
 
 
-def _candidate_from_text_or_payload(candidate: Any) -> dict[str, Any]:
+def _candidate_from_text_or_payload(candidate: Any) -> Payload:
     if isinstance(candidate, dict):
-        return candidate
+        return Payload.from_input(candidate)
     if isinstance(candidate, str):
         parsed = parse_response_text(candidate)
         if len(parsed) != 1:
             raise ValueError(f"Expected exactly one candidate, got {len(parsed)}.")
-        return parsed[0]
+        return Payload.from_input(parsed[0])
     raise TypeError("candidate must be a dictionary or serialized candidate text.")
+
+
+PAYLOAD_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "ptx": {"type": "string", "minLength": 1},
+        "threads_x": {"type": "integer", "minimum": 1},
+        "threads_y": {"type": "integer", "minimum": 1},
+        "threads_z": {"type": "integer", "minimum": 1},
+    },
+    "required": ["ptx", "threads_x"],
+    "additionalProperties": False,
+}
 
 
 def _evaluated_candidate_from_dict(data: dict[str, Any]) -> EvaluatedCandidate:
@@ -115,8 +128,6 @@ def _evaluated_candidate_from_dict(data: dict[str, Any]) -> EvaluatedCandidate:
     defaults = {
         "kernel_name": "",
         "git_commit_hash": "unknown",
-        "round_index": 1,
-        "index": 1,
         "payload": {},
         "compiles": False,
         "correct": False,
@@ -124,9 +135,15 @@ def _evaluated_candidate_from_dict(data: dict[str, Any]) -> EvaluatedCandidate:
         "triton_p20": float("inf"),
         "triton_p50": float("inf"),
         "triton_p80": float("inf"),
+        "triton_p90": float("inf"),
+        "triton_p95": float("inf"),
+        "triton_p99": float("inf"),
         "p20": float("inf"),
         "p50": float("inf"),
         "p80": float("inf"),
+        "p90": float("inf"),
+        "p95": float("inf"),
+        "p99": float("inf"),
         "speedup_vs_triton": 0,
         "compile_output": "",
         "compile_error": "",
@@ -180,21 +197,14 @@ def compile_candidate(kernel_name: str, candidate: dict[str, Any] | str) -> dict
 def evaluate_candidate(
     kernel_name: str,
     candidate: dict[str, Any] | str,
-    round_index: int = 1,
-    candidate_index: int = 1,
-    clear_cache: bool = False,
 ) -> dict[str, Any]:
     kernel_cls = resolve_kernel(kernel_name)
     payload = _candidate_from_text_or_payload(candidate)
 
     log_json("EVALUATING CANDIDATE PAYLOAD", payload)
 
-    evaluator = TritonPTXCandidateEvaluator(kernel_cls, clear_cache=clear_cache)
-    result = evaluator.evaluate(
-        payload,
-        round_index=round_index,
-        candidate_index=candidate_index,
-    )
+    evaluator = TritonPTXCandidateEvaluator(kernel_cls)
+    result = evaluator.evaluate(payload)
 
     result_dict = _json_safe(result.to_dict())
     log_json("EVALUATION RESULT", result_dict)
@@ -276,8 +286,8 @@ OPENAI_TOOLS = [
                 "properties": {
                     "kernel_name": {"type": "string"},
                     "candidate": {
-                        "description": "Candidate dictionary or serialized candidate text containing ptx and launch dimensions.",
-                        "oneOf": [{"type": "object"}, {"type": "string"}],
+                        "description": "Candidate payload object or serialized candidate text containing PTX and launch dimensions.",
+                        "oneOf": [PAYLOAD_INPUT_SCHEMA, {"type": "string"}],
                     },
                 },
                 "required": ["kernel_name", "candidate"],
@@ -295,12 +305,9 @@ OPENAI_TOOLS = [
                 "properties": {
                     "kernel_name": {"type": "string"},
                     "candidate": {
-                        "description": "Candidate dictionary or serialized candidate text containing ptx and launch dimensions.",
-                        "oneOf": [{"type": "object"}, {"type": "string"}],
+                        "description": "Candidate payload object or serialized candidate text containing PTX and launch dimensions.",
+                        "oneOf": [PAYLOAD_INPUT_SCHEMA, {"type": "string"}],
                     },
-                    "round_index": {"type": "integer", "minimum": 1, "default": 1},
-                    "candidate_index": {"type": "integer", "minimum": 1, "default": 1},
-                    "clear_cache": {"type": "boolean", "default": False},
                 },
                 "required": ["kernel_name", "candidate"],
                 "additionalProperties": False,

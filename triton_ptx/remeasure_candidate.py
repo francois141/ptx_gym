@@ -46,45 +46,20 @@ def resolve_kernel_name(record: dict[str, Any], explicit_kernel: str | None) -> 
     return kernel_name
 
 
-def resolve_index(value: Any, default: int) -> int:
-    if value is None:
-        return default
-
-    try:
-        return int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"Expected an integer-like index, got {value!r}") from exc
-
-
 def remeasure_candidate(
     record: dict[str, Any],
     *,
     kernel_name: str | None = None,
-    round_index: int | None = None,
-    candidate_index: int | None = None,
-    clear_cache: bool = False,
 ):
-    from triton_ptx.evaluation import TritonPTXCandidateEvaluator
+    from triton_ptx.evaluation import Payload, TritonPTXCandidateEvaluator
     from triton_ptx.kernels import resolve_kernel
 
     resolved_kernel_name = resolve_kernel_name(record, kernel_name)
     kernel_cls = resolve_kernel(resolved_kernel_name)
-    payload = extract_payload(record)
+    payload = Payload.from_input(extract_payload(record))
 
-    evaluator = TritonPTXCandidateEvaluator(kernel_cls, clear_cache=clear_cache)
-    return evaluator.evaluate(
-        payload,
-        round_index=(
-            round_index
-            if round_index is not None
-            else resolve_index(record.get("round_index"), 0)
-        ),
-        candidate_index=(
-            candidate_index
-            if candidate_index is not None
-            else resolve_index(record.get("index"), 0)
-        ),
-    )
+    evaluator = TritonPTXCandidateEvaluator(kernel_cls)
+    return evaluator.evaluate(payload)
 
 
 def parse_args() -> argparse.Namespace:
@@ -104,21 +79,6 @@ def parse_args() -> argparse.Namespace:
         help='Kernel class name to use when the input JSON has no "kernel_name".',
     )
     parser.add_argument(
-        "--round-index",
-        type=int,
-        help="Override round_index in the output record.",
-    )
-    parser.add_argument(
-        "--candidate-index",
-        type=int,
-        help="Override index in the output record.",
-    )
-    parser.add_argument(
-        "--clear-cache",
-        action="store_true",
-        help="Clear Triton cache before remeasuring.",
-    )
-    parser.add_argument(
         "--output",
         type=Path,
         help="Optional path to write the fresh measurement JSON.",
@@ -132,9 +92,6 @@ def main() -> None:
     result = remeasure_candidate(
         record,
         kernel_name=args.kernel,
-        round_index=args.round_index,
-        candidate_index=args.candidate_index,
-        clear_cache=args.clear_cache,
     )
     output = result.to_json()
 

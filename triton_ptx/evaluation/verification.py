@@ -1,15 +1,10 @@
-from abc import ABC, abstractmethod
 import inspect
 import random
 
 import torch
+from triton_ptx.evaluation.base import BaseVerifier
 from triton_ptx.helpers.kernels import has_ptx_code
-
-
-class BaseVerifier(ABC):
-    @abstractmethod
-    def verify(self, op) -> bool:
-        pass
+from triton_ptx.helpers.serialization import dump_nested, tensor_summary
 
 
 class OutputVerifier(BaseVerifier):
@@ -101,13 +96,6 @@ class OutputVerifier(BaseVerifier):
             return bad
         return bad[:limit]
 
-    def _tensor_summary(self, x):
-        return {
-            "shape": tuple(x.shape),
-            "dtype": str(x.dtype),
-            "device": str(x.device),
-        }
-
     def _error_stats(self, actual, expected, mask=None):
         expected = expected.to(actual.dtype)
         actual64 = actual.detach().to(torch.float64)
@@ -137,18 +125,6 @@ class OutputVerifier(BaseVerifier):
             "mean_relative_error": rel_error.mean().detach().cpu().item(),
         }
 
-    def _dump(self, x):
-        if isinstance(x, torch.Tensor):
-            return self._tensor_summary(x)
-
-        if isinstance(x, (list, tuple)):
-            return [self._dump(v) for v in x]
-
-        if isinstance(x, dict):
-            return {k: self._dump(v) for k, v in x.items()}
-
-        return x
-
     def _failure_report(
         self,
         size,
@@ -168,12 +144,12 @@ class OutputVerifier(BaseVerifier):
         }
 
         if not isinstance(expected_out, torch.Tensor) or not isinstance(triton_out, torch.Tensor):
-            report[f"{expected_name}_output"] = self._dump(expected_out)
-            report["triton_output"] = self._dump(triton_out)
+            report[f"{expected_name}_output"] = dump_nested(expected_out)
+            report["triton_output"] = dump_nested(triton_out)
             return report
 
-        report[f"{expected_name}_output"] = self._tensor_summary(expected_out)
-        report["triton_output"] = self._tensor_summary(triton_out)
+        report[f"{expected_name}_output"] = tensor_summary(expected_out)
+        report["triton_output"] = tensor_summary(triton_out)
 
         if expected_out.shape != triton_out.shape:
             report["error"] = {

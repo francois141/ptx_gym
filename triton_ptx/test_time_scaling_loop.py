@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 from datetime import datetime
 from pathlib import Path
 
 from omegaconf import DictConfig, OmegaConf
 
-from triton_ptx.evaluation import TritonPTXCandidateEvaluator
+from triton_ptx.evaluation import Payload, TritonPTXCandidateEvaluator
 from triton_ptx.llm_endpoint import create_llm_endpoint
 from triton_ptx.helpers.environment import get_ptx_system_config
 from triton_ptx.helpers.ptx import parse_ptx_signature
@@ -93,6 +94,22 @@ def run_test_time_scaling_loop(
     (run_archive_root / "compiled_triton_kernel.ptx").write_text(baseline_ptx + "\n", encoding="utf-8")
 
     OmegaConf.save(config, run_archive_root / "config.yaml")
+    experiment_metadata = {
+        "kernel_name": kernel_cls.__name__,
+        "run_timestamp": run_timestamp,
+        "rounds": rounds,
+        "candidates_per_round": k,
+        "max_retries": max_retries,
+        "candidate_slots": [
+            {"round_index": round_index, "index": index}
+            for round_index in range(1, rounds + 1)
+            for index in range(1, k + 1)
+        ],
+    }
+    (run_archive_root / "experiment_metadata.json").write_text(
+        json.dumps(experiment_metadata, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
 
     prompter = create_llm_endpoint(
         config.generator.provider,
@@ -126,9 +143,7 @@ def run_test_time_scaling_loop(
 
         for index, answer in enumerate(answers, start=1):
             result = evaluator.evaluate(
-                answer,
-                round_index=round_index,
-                candidate_index=index,
+                Payload.from_input(answer),
             )
             original_result = result
 
@@ -163,9 +178,7 @@ def run_test_time_scaling_loop(
                 )[0]
 
                 result = evaluator.evaluate(
-                    repaired_answer,
-                    round_index=round_index,
-                    candidate_index=index,
+                    Payload.from_input(repaired_answer),
                 )
                 repair_results.append(result)
                 retry_index += 1

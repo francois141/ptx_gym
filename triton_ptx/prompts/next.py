@@ -10,6 +10,7 @@ from triton_ptx.helpers.kernels import (
     extract_specification_from_operator,
     get_ptx_extra_payload_keys,
 )
+from triton_ptx.kernels.base import TritonPTXKernel
 from triton_ptx.prompts import (
     commenting_rules,
     correctness_rules,
@@ -62,7 +63,7 @@ def _format_launch_metadata(candidate: EvaluatedCandidate) -> str:
     )
 
 
-def _candidate_block(candidate: EvaluatedCandidate) -> str:
+def _candidate_block(candidate: EvaluatedCandidate, display_index: int) -> str:
     ptx_code = str(candidate.payload.get("ptx", "")).strip() or "<missing PTX payload>"
     diagnostics_block = ""
     if not candidate.correct:
@@ -85,7 +86,7 @@ Timing error:
 """
 
     return f"""
-## Candidate r{candidate.round_index}c{candidate.index}
+## Candidate {display_index}
 
 - Compiles: {"yes" if candidate.compiles else "no"}
 - Correct: {"yes" if candidate.correct else "no"}
@@ -94,6 +95,9 @@ Timing error:
 - p20: {_format_metric(candidate.p20)}
 - p50: {_format_metric(candidate.p50)}
 - p80: {_format_metric(candidate.p80)}
+- p90: {_format_metric(candidate.p90)}
+- p95: {_format_metric(candidate.p95)}
+- p99: {_format_metric(candidate.p99)}
 
 Extra PTX payload keys:
 {_format_extra_payload_keys(candidate)}
@@ -122,7 +126,10 @@ def candidate_results_block(candidates: list[EvaluatedCandidate]) -> str:
         "## Candidate Results",
         "Use these results to keep strong ideas from successful candidates and avoid repeating choices that caused compilation, correctness, or performance failures.",
     ]
-    sections.extend(_candidate_block(candidate) for candidate in candidates)
+    sections.extend(
+        _candidate_block(candidate, display_index)
+        for display_index, candidate in enumerate(candidates, start=1)
+    )
     return "\n\n".join(sections)
 
 
@@ -210,7 +217,7 @@ def build_follow_up_prompt_for_path(
 
 def build_follow_up_prompt_for_operator(
     candidates: list[EvaluatedCandidate] | None,
-    operator_cls: type,
+    operator_cls: type[TritonPTXKernel],
     *,
     version: str,
     target: str,
