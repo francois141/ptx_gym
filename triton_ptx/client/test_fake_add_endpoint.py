@@ -8,9 +8,9 @@ from omegaconf import OmegaConf
 
 import triton_ptx.evaluation.evaluate as evaluate_module
 from triton_ptx.evaluation import OutputVerifier, Timing
-from triton_ptx.llm_endpoint import create_llm_endpoint
-from triton_ptx.llm_endpoint.fake_add_prompt import ADD_KERNEL_PTX
-from triton_ptx import test_time_scaling_loop as tts
+from triton_ptx.client.llm_endpoint import create_llm_endpoint
+from triton_ptx.client.llm_endpoint.fake_add_prompt import ADD_KERNEL_PTX
+from triton_ptx.client import test_time_scaling_loop as tts
 
 
 class ThreeSizeOutputVerifier(OutputVerifier):

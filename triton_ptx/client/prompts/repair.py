@@ -4,7 +4,7 @@ from __future__ import annotations
 from triton_ptx.evaluation import EvaluatedCandidate
 from triton_ptx.helpers.kernels import extract_specification_from_operator
 from triton_ptx.kernels.base import TritonPTXKernel
-from triton_ptx.prompts.blocks import (
+from triton_ptx.client.prompts.blocks import (
     commenting_rules,
     correctness_rules,
     constexpr_values_block,
@@ -15,7 +15,7 @@ from triton_ptx.prompts.blocks import (
     signature_template,
     triton_kernel_block,
 )
-from triton_ptx.prompts.next import candidate_results_block
+from triton_ptx.client.prompts.next import candidate_results_block
 
 
 def repair_task(retry_index: int, max_retries: int) -> str:

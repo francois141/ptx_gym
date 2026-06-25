@@ -8,15 +8,15 @@ from pathlib import Path
 from omegaconf import DictConfig, OmegaConf
 
 from triton_ptx.evaluation import Payload, TritonPTXCandidateEvaluator
-from triton_ptx.llm_endpoint import create_llm_endpoint
+from triton_ptx.client.llm_endpoint import create_llm_endpoint
 from triton_ptx.helpers.environment import get_ptx_system_config
 from triton_ptx.helpers.ptx import parse_ptx_signature
-from triton_ptx.helpers.storage import JsonDatasetWriter, ensure_safe_folder_name
+from triton_ptx.client.storage import JsonDatasetWriter, ensure_safe_folder_name
 from triton_ptx.helpers.triton import dump_kernel_ptx
 from triton_ptx.kernels import resolve_kernel
-from triton_ptx.prompts import build_follow_up_prompt_for_operator
-from triton_ptx.prompts import build_prompt_for_operator
-from triton_ptx.prompts import build_repair_prompt_for_operator
+from triton_ptx.client.prompts import build_follow_up_prompt_for_operator
+from triton_ptx.client.prompts import build_prompt_for_operator
+from triton_ptx.client.prompts import build_repair_prompt_for_operator
 
 DEFAULT_CONFIG = {
     "loop": {

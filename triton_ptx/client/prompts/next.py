@@ -11,7 +11,7 @@ from triton_ptx.helpers.kernels import (
     get_ptx_extra_payload_keys,
 )
 from triton_ptx.kernels.base import TritonPTXKernel
-from triton_ptx.prompts import (
+from triton_ptx.client.prompts import (
     commenting_rules,
     correctness_rules,
     constexpr_values_block,

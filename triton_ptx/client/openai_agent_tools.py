@@ -9,12 +9,12 @@ from typing import Any, Callable
 from openai import OpenAI
 from triton_ptx.evaluation import EvaluatedCandidate, Payload, TritonPTXCandidateEvaluator
 from triton_ptx.evaluation import compile_ptx
-from triton_ptx.llm_endpoint.base import parse_response_text
+from triton_ptx.client.llm_endpoint.base import parse_response_text
 from triton_ptx.helpers.environment import get_ptx_system_config
 from triton_ptx.helpers.ptx import parse_ptx_signature
 from triton_ptx.helpers.triton import dump_kernel_ptx
 from triton_ptx.kernels import resolve_kernel
-from triton_ptx.prompts import (
+from triton_ptx.client.prompts import (
     build_follow_up_prompt_for_operator,
     build_prompt_for_operator,
     build_repair_prompt_for_operator,
@@ -28,7 +28,7 @@ Prefer Tensor Core paths for GEMM-like work when viable: FP16/BF16/TF32 inputs, 
 ldmatrix/shared-memory staging, and mma.sync.aligned or newer WGMMA-family instructions. Use local
 tools to compile, verify, benchmark, and repair candidates before finalizing."""
 
-AGENT_PROMPTS_PATH = PACKAGE_DIR / "triton_ptx" / "prompts"
+AGENT_PROMPTS_PATH = PACKAGE_DIR / "prompts"
 SYSTEM_PROMPT_PATH = AGENT_PROMPTS_PATH / "SYSTEM.md"
 
 def log_section(title: str) -> None:

@@ -2,8 +2,8 @@ import sys
 
 import pytest
 
-import triton_ptx.llm_endpoint as llm_endpoint_factory
-from triton_ptx import test_time_scaling_loop as tts
+import triton_ptx.client.llm_endpoint as llm_endpoint_factory
+from triton_ptx.client import test_time_scaling_loop as tts
 
 
 def test_build_prompter_selects_gemini(monkeypatch):
@@ -48,14 +48,14 @@ def test_parse_args_accepts_config_path(monkeypatch):
             "test_time_scaling_loop.py",
             "AddKernel",
             "--config",
-            "triton_ptx/configs/test_time_scaling_gemini.yaml",
+            "triton_ptx/client/configs/test_time_scaling_gemini.yaml",
         ],
     )
 
     args = tts.parse_args()
 
     assert args.kernel == "AddKernel"
-    assert str(args.config) == "triton_ptx/configs/test_time_scaling_gemini.yaml"
+    assert str(args.config) == "triton_ptx/client/configs/test_time_scaling_gemini.yaml"
 
 
 def test_load_config_merges_with_defaults(tmp_path):
