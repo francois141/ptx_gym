@@ -4,9 +4,8 @@ from .base import LLMEndpoint, parse_response_text
 class GeminiPrompt(LLMEndpoint):
     DEFAULT_MODEL = "gemini-2.5-pro"
 
-    def __init__(self, model=None, max_output_tokens=8192):
+    def __init__(self, model=None):
         self.model = model or self.DEFAULT_MODEL
-        self.max_output_tokens = max_output_tokens
         self._types = None
         self.client = self._build_client()
 
@@ -58,7 +57,6 @@ class GeminiPrompt(LLMEndpoint):
 
         config = self._types.GenerateContentConfig(
             candidate_count=1,
-            max_output_tokens=self.max_output_tokens,
             response_mime_type="application/json",
         )
 

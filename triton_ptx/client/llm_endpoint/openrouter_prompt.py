@@ -26,13 +26,11 @@ class OpenRouterPrompt(LLMEndpoint):
     def __init__(
         self,
         model=None,
-        max_tokens=None,
         api_key=None,
         site_url=None,
         app_name=None,
     ):
         self.model = model or self.DEFAULT_MODEL
-        self.max_tokens = max_tokens
 
         key = api_key or os.environ.get("OPENROUTER_API_KEY")
         if not key:
@@ -102,9 +100,6 @@ class OpenRouterPrompt(LLMEndpoint):
                 ],
                 "n": remaining,
             }
-
-            if self.max_tokens is not None:
-                request_kwargs["max_tokens"] = self.max_tokens
 
             response = self.client.chat.completions.create(**request_kwargs)
 

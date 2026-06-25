@@ -6,8 +6,6 @@ loop:
 generator:
   provider: gemini
   model: gemini-2.5-pro
-  options:
-    max_output_tokens: 8192
 
 storage:
   database_dir: database
