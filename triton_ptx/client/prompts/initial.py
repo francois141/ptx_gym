@@ -6,7 +6,7 @@ from triton_ptx.helpers.kernels import (
     extract_specification,
     extract_specification_from_operator,
 )
-from triton_ptx.prompts import (
+from triton_ptx.client.prompts import (
     commenting_rules,
     correctness_rules,
     constexpr_values_block,
