@@ -7,6 +7,7 @@ from triton_ptx.evaluation.compilation import compile_ptx
 from triton_ptx.evaluation.types import Payload
 from triton_ptx.helpers import environment
 from triton_ptx.helpers.environment import (
+    get_available_video_memory_bytes,
     get_ptx_system_config,
     get_ptxas_path,
     is_gpu_available,
@@ -26,6 +27,20 @@ Cuda compilation tools, release 12.8, V12.8.93
     )
 
     assert environment._guess_ptx_version_from_ptxas() == "8.7"
+
+# memory.total [MiB]
+# 46068 MiB
+def test_get_available_video_memory_bytes(monkeypatch):
+
+    def fake_check_output(command, text, stderr):
+        return """
+        memory.total [MiB]
+        46068 MiB
+        """.strip()
+
+    monkeypatch.setattr(environment.subprocess, "check_output", fake_check_output)
+
+    assert get_available_video_memory_bytes() == 46068 * 1024 * 1024
 
 def test_get_ptxas_path_prefers_blackwell_binary(monkeypatch, tmp_path):
     blackwell_path = tmp_path / "ptxas-blackwell"

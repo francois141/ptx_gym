@@ -3,12 +3,13 @@ import random
 
 import torch
 from triton_ptx.evaluation.base import BaseVerifier
+from triton_ptx.helpers.environment import get_available_video_memory_bytes
 from triton_ptx.helpers.kernels import has_ptx_code
-from triton_ptx.helpers.serialization import dump_nested, tensor_summary
+from triton_ptx.helpers.serialization import dump_nested, tensor_bytes, tensor_summary
 
 
 class OutputVerifier(BaseVerifier):
-    MAX_VALUES = 5 * 10**7
+    MAX_VIDEO_MEMORY_FRACTION = 0.70
 
     def __init__(
         self,
@@ -18,6 +19,7 @@ class OutputVerifier(BaseVerifier):
         rtol=1e-2,
         atol=1e-2,
         max_print=32,
+        max_video_memory_fraction=MAX_VIDEO_MEMORY_FRACTION,
     ):
         self.sizes = sizes
         self.iters_per_size = iters_per_size
@@ -25,7 +27,10 @@ class OutputVerifier(BaseVerifier):
         self.rtol = rtol
         self.atol = atol
         self.max_print = max_print
+        self.max_video_memory_fraction = max_video_memory_fraction
         self.last_report = {}
+
+        self._set_memory_budget()
 
     def _is_size_arg(self, name):
         name = name.lower()
@@ -49,6 +54,23 @@ class OutputVerifier(BaseVerifier):
         if isinstance(x, dict):
             return sum(self._numel(v) for v in x.values())
         return 0
+
+    def _set_memory_budget(self):
+        if not torch.cuda.is_available():
+            self._max_verification_bytes = None
+            return
+
+        available_bytes = get_available_video_memory_bytes(torch.cuda.current_device())
+        self._max_verification_bytes = int(available_bytes * self.max_video_memory_fraction)
+
+    def _assert_input_limits(self, size, inputs):
+        input_bytes = tensor_bytes(inputs)
+        if self._max_verification_bytes is not None and input_bytes > self._max_verification_bytes:
+            raise ValueError(
+                f"size={size} generated {input_bytes} bytes of tensor inputs, "
+                f"above verification memory budget {self._max_verification_bytes} bytes "
+                f"({self.max_video_memory_fraction:.0%} of available video memory)"
+            )
 
     def _same(self, actual, expected):
         if isinstance(actual, torch.Tensor) and isinstance(expected, torch.Tensor):
@@ -192,12 +214,7 @@ class OutputVerifier(BaseVerifier):
                 kwargs = self._kwargs(op, size)
                 inputs = op.get_random_input(**kwargs)
 
-                num_values = self._numel(inputs)
-                if num_values > self.MAX_VALUES:
-                    raise ValueError(
-                        f"size={size} generated {num_values} tensor values, "
-                        f"above limit {self.MAX_VALUES}"
-                    )
+                self._assert_input_limits(size, inputs)
 
                 triton_out, _ = op.forward_triton(inputs)
                 ptx_out, _ = op.forward_triton(inputs, ptx=True)
@@ -219,7 +236,6 @@ class OutputVerifier(BaseVerifier):
                     "size": size,
                     "iteration": iteration,
                     "kwargs": kwargs,
-                    "num_values": int(num_values),
                 }
 
         return True
@@ -236,12 +252,7 @@ class OutputVerifier(BaseVerifier):
                 kwargs = self._kwargs(op, size)
                 inputs = op.get_random_input(**kwargs)
 
-                num_values = self._numel(inputs)
-                if num_values > self.MAX_VALUES:
-                    raise ValueError(
-                        f"size={size} generated {num_values} tensor values, "
-                        f"above limit {self.MAX_VALUES}"
-                    )
+                self._assert_input_limits(size, inputs)
 
                 triton_out, _ = op.forward_triton(inputs)
                 torch_out = op.forward_torch(inputs)
@@ -264,7 +275,6 @@ class OutputVerifier(BaseVerifier):
                     "size": size,
                     "iteration": iteration,
                     "kwargs": kwargs,
-                    "num_values": int(num_values),
                 }
 
         return True

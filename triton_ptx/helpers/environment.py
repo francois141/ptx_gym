@@ -70,6 +70,44 @@ def is_gpu_available() -> bool:
     return torch.cuda.is_available()
 
 
+def get_available_video_memory_bytes(device_index: int | None = None) -> int:
+    """
+    Return currently available NVIDIA GPU memory in bytes.
+
+    The value is queried with ``nvidia-smi`` in MiB and converted to bytes.
+    """
+    command = [
+        "nvidia-smi",
+        "--query-gpu=memory.free",
+        "--format=csv,noheader,nounits",
+    ]
+    if device_index is not None:
+        command.insert(1, f"--id={device_index}")
+
+    try:
+        output = subprocess.check_output(
+            command,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+        raise RuntimeError("Unable to query available video memory with nvidia-smi.") from exc
+
+    memory_mib = []
+    for line in output.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        match = re.search(r"\d+", line)
+        if match is not None:
+            memory_mib.append(int(match.group(0)))
+
+    if not memory_mib:
+        raise RuntimeError(f"Unable to parse available video memory from nvidia-smi output: {output!r}")
+
+    return min(memory_mib) * 1024 * 1024
+
+
 def resolve_git_commit_hash() -> str:
     """Return the current Git commit hash, or ``"unknown"`` outside a Git checkout."""
     try:
