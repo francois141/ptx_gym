@@ -624,6 +624,7 @@ backends = [*BackendInstaller.copy(["nvidia", "amd"]), *BackendInstaller.copy_ex
 
 def get_package_dirs():
     yield ("", "python")
+    yield ("triton_ptx", "triton_ptx")
 
     for backend in backends:
         # we use symlinks for external plugins
@@ -651,6 +652,7 @@ def get_package_dirs():
 
 def get_packages():
     yield from find_packages(where="python")
+    yield from find_packages(where=".", include=["triton_ptx", "triton_ptx.*"])
 
     for backend in backends:
         yield f"triton.backends.{backend.name}"
@@ -805,6 +807,20 @@ def get_triton_version_suffix():
 # keep it separate for easy substitution
 TRITON_VERSION = "3.6.0" + get_triton_version_suffix()
 
+
+def get_install_requires():
+    requirements = [
+        "importlib-metadata; python_version < '3.10'",
+    ]
+    requirements_path = Path(__file__).with_name("requirements.txt")
+    if requirements_path.exists():
+        requirements.extend(
+            line
+            for line in requirements_path.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        )
+    return requirements
+
 # Dynamically define supported Python versions and classifiers
 MIN_PYTHON = (3, 10)
 MAX_PYTHON = (3, 14)
@@ -828,9 +844,7 @@ setup(
     author_email="phil@openai.com",
     description="A language and compiler for custom Deep Learning operations",
     long_description="",
-    install_requires=[
-        "importlib-metadata; python_version < '3.10'",
-    ],
+    install_requires=get_install_requires(),
     packages=list(get_packages()),
     package_dir=dict(get_package_dirs()),
     entry_points=get_entry_points(),

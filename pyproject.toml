@@ -2,6 +2,14 @@
 requires = ["setuptools>=40.8.0", "cmake>=3.20,<4.0", "ninja>=1.11.1", "pybind11>=2.13.1"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "triton_ptx"
+dynamic = ["version", "dependencies"]
+requires-python = ">=3.10,<3.15"
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
 [tool.mypy]
 mypy_path = "$MYPY_CONFIG_FILE_DIR/python"
 files = [
