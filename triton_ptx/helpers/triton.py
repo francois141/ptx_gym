@@ -8,10 +8,11 @@ import shutil
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Callable
 
 import triton
 import triton.language as tl
+from triton.compiler.compiler import CompiledKernel
+
 
 def clear_triton_cache() -> None:
     """Remove Triton's local compilation cache if it exists.
@@ -51,7 +52,7 @@ def clear_triton_cache() -> None:
 
 
 def extract_ptx(
-    compiled_kernel: Any,
+    compiled_kernel: CompiledKernel,
     *,
     print_ttir: bool = False,
     print_ttgir: bool = False,
@@ -69,21 +70,25 @@ def extract_ptx(
         The compiled PTX source when present, otherwise ``None``.
     """
     if print_ttir:
-        print(f"ttir: {compiled_kernel.asm.get('ttir', None)[:2000]}")
+        ttir = compiled_kernel.asm.get("ttir")
+        print(f"ttir: {ttir[:2000] if ttir is not None else None}")
         print("-" * 100 + "\n")
 
     if print_ttgir:
-        print(f"ttgir: {compiled_kernel.asm.get('ttgir', None)[:1000]}")
+        ttgir = compiled_kernel.asm.get("ttgir")
+        print(f"ttgir: {ttgir[:1000] if ttgir is not None else None}")
         print("-" * 100 + "\n")
 
     if print_llir:
-        print(f"llir: {compiled_kernel.asm.get('llir', None)[:1000]}")
+        llir = compiled_kernel.asm.get("llir")
+        print(f"llir: {llir[:1000] if llir is not None else None}")
         print("-" * 100 + "\n")
 
-    return compiled_kernel.asm.get("ptx", None)
+    ptx = compiled_kernel.asm.get("ptx")
+    return ptx if isinstance(ptx, str) else None
 
 
-def dump_kernel_ptx(kernel: Any) -> str | None:
+def dump_kernel_ptx(kernel):
     """Compile a kernel with randomized inputs and return its generated PTX.
 
     Args:
@@ -98,10 +103,7 @@ def dump_kernel_ptx(kernel: Any) -> str | None:
     return extract_ptx(compiled_kernel)
 
 
-def jit_fixed_parameters(
-    fn: Callable[..., Any] | None = None,
-    **triton_kwargs: Any,
-) -> Callable[..., Any]:
+def jit_fixed_parameters(fn=None, **triton_kwargs):
     """Wrap ``triton.jit`` while preserving non-``tl.constexpr`` parameters.
 
     This decorator auto-populates ``do_not_specialize`` with every function
@@ -118,7 +120,8 @@ def jit_fixed_parameters(
         A Triton-jitted function or a decorator that produces one.
     """
 
-    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+    def decorator(func):
+        """JIT-compile one function with inferred specialization settings."""
         params = inspect.signature(func).parameters
         annotations = inspect.get_annotations(func, eval_str=True)
         do_not_specialize_list = []

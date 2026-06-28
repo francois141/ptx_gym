@@ -5,7 +5,6 @@ from triton_ptx.evaluation.compilation import compile_ptx
 from triton_ptx.evaluation.performance import evaluate_ptx_performance
 from triton_ptx.evaluation.types import EvaluatedCandidate, Payload
 from triton_ptx.evaluation.verification import OutputVerifier
-from triton_ptx.helpers.kernels import instantiate_operator
 from triton_ptx.helpers.triton import clear_triton_cache
 
 
@@ -54,7 +53,7 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
             )
 
         try:
-            operator = instantiate_operator(self.operator_cls, launch_payload)
+            operator = self.operator_cls(ptx=launch_payload)
             verifier = OutputVerifier()
             correct = verifier.verify(operator)
             verifier_report = getattr(verifier, "last_report", {})

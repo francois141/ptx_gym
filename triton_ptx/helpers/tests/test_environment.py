@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 import pytest
@@ -14,7 +16,8 @@ from triton_ptx.helpers.environment import (
 )
 
 
-def test_guess_ptx_version_from_ptxas_output(monkeypatch):
+def test_guess_ptx_version_from_ptxas_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Map the CUDA release reported by ptxas to the expected PTX version."""
     mock_output = """
 ptxas: NVIDIA (R) Ptx optimizing assembler
 Cuda compilation tools, release 12.8, V12.8.93
@@ -28,11 +31,18 @@ Cuda compilation tools, release 12.8, V12.8.93
 
     assert environment._guess_ptx_version_from_ptxas() == "8.7"
 
+
 # memory.total [MiB]
 # 46068 MiB
-def test_get_available_video_memory_bytes(monkeypatch):
+def test_get_available_video_memory_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Convert the available-memory nvidia-smi response from MiB to bytes."""
 
-    def fake_check_output(command, text, stderr):
+    def fake_check_output(
+        command: list[str],
+        text: bool,
+        stderr: int,
+    ) -> str:
+        """Return a representative nvidia-smi memory response."""
         return """
         memory.total [MiB]
         46068 MiB
@@ -42,22 +52,34 @@ def test_get_available_video_memory_bytes(monkeypatch):
 
     assert get_available_video_memory_bytes() == 46068 * 1024 * 1024
 
-def test_get_ptxas_path_prefers_blackwell_binary(monkeypatch, tmp_path):
+
+def test_get_ptxas_path_prefers_blackwell_binary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Prefer the dedicated Blackwell assembler for Blackwell targets."""
     blackwell_path = tmp_path / "ptxas-blackwell"
     blackwell_path.touch()
     monkeypatch.setattr(environment, "_PTXAS_BLACKWELL_PATH", blackwell_path)
 
     assert get_ptxas_path("sm_100") == blackwell_path
 
-def test_compile_ptx(monkeypatch):
-    calls = {}
+
+def test_compile_ptx(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pass the detected target and strict flags to the PTX assembler."""
+    calls: dict[str, list[str]] = {}
 
     class Completed:
         returncode = 0
         stdout = "compiled"
         stderr = ""
 
-    def fake_run(command, capture_output, text):
+    def fake_run(
+        command: list[str],
+        capture_output: bool,
+        text: bool,
+    ) -> Completed:
+        """Record an assembler command and return a successful result."""
         calls["command"] = command
         return Completed()
 
@@ -79,7 +101,8 @@ def test_compile_ptx(monkeypatch):
     not is_gpu_available(),
     reason="CUDA is not available on this system.",
 )
-def test_get_ptx_system_config_returns_non_empty_values():
+def test_get_ptx_system_config_returns_non_empty_values() -> None:
+    """Return a complete PTX configuration when CUDA is available."""
     version, target, address_size = get_ptx_system_config()
 
     assert version

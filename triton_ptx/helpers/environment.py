@@ -120,7 +120,7 @@ def resolve_git_commit_hash() -> str:
         return "unknown"
 
 
-def get_ptxas_path(target: str) -> Path:
+def get_ptxas_path(target: str | int | None) -> Path:
     """
     Return the bundled ``ptxas`` path for the requested target.
 
@@ -159,20 +159,6 @@ def get_ptx_system_config() -> tuple[str, str, int]:
 
     address_size = ctypes.sizeof(ctypes.c_void_p) * 8
 
-    version = _guess_ptx_version_from_ptxas()
-
-    return version, target, address_size
-
-
-def _guess_ptx_version_from_ptxas() -> str:
-    """
-    Run the bundled ``ptxas --version`` command and map its CUDA release
-    to a PTX ISA version.
-
-    Raises:
-        RuntimeError: If ``ptxas`` cannot be executed or its version cannot be parsed.
-        ValueError: If the detected CUDA release is not explicitly supported.
-    """
     try:
         output = subprocess.check_output(
             [str(_PTXAS_PATH), "--version"],
@@ -190,4 +176,6 @@ def _guess_ptx_version_from_ptxas() -> str:
         )
 
     detected_cuda_version = match.group(1)
-    return _cuda_release_to_ptx_version(detected_cuda_version)
+    version = _cuda_release_to_ptx_version(detected_cuda_version)
+
+    return version, target, address_size

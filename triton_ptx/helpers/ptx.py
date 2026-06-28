@@ -47,6 +47,7 @@ _PTX_TYPE_RE = re.compile(
 
 
 def parse_ptx_signature(ptx: str) -> tuple[PTXSignatureParameter, ...]:
+    """Parse the ordered parameters from a PTX entry or function signature."""
     match = _PTX_PROTOTYPE_RE.search(ptx)
     if match is None:
         raise ValueError("Could not find a PTX .entry/.func signature.")

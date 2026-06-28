@@ -4,27 +4,28 @@ import json
 import math
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
-
-from triton_ptx.helpers.validation import positive_int
+from typing import Any, Final
 
 
 @dataclass(frozen=True)
 class Payload:
+    """Compiled PTX payload and launch dimensions."""
+
     ptx: str
     threads_x: int
     threads_y: int | None = None
     threads_z: int | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.ptx, str) or not self.ptx.strip():
+        if not self.ptx.strip():
             raise ValueError('Candidate payload is missing non-empty "ptx" code.')
 
-        positive_int("threads_x", self.threads_x)
-        if self.threads_y is not None:
-            positive_int("threads_y", self.threads_y)
-        if self.threads_z is not None:
-            positive_int("threads_z", self.threads_z)
+        for name in ("threads_x", "threads_y", "threads_z"):
+            value = getattr(self, name)
+            if value is not None and (
+                not isinstance(value, int) or isinstance(value, bool) or value <= 0
+            ):
+                raise ValueError(f'Candidate payload field "{name}" must be a positive integer.')
 
     @classmethod
     def from_input(cls, payload: Payload | dict[str, Any]) -> Payload:
@@ -33,18 +34,15 @@ class Payload:
         if not isinstance(payload, dict):
             raise ValueError("Candidate payload must be a dictionary.")
 
-        threads_x = payload.get("threads_x", payload.get("num_threads_x"))
-        threads_y = payload.get("threads_y", payload.get("num_threads_y"))
-        threads_z = payload.get("threads_z", payload.get("num_threads_z"))
-
         return cls(
             ptx=payload.get("ptx", ""),
-            threads_x=threads_x,
-            threads_y=threads_y,
-            threads_z=threads_z,
+            threads_x=payload.get("threads_x", payload.get("num_threads_x")),
+            threads_y=payload.get("threads_y", payload.get("num_threads_y")),
+            threads_z=payload.get("threads_z", payload.get("num_threads_z")),
         )
 
     def to_launch_dict(self) -> dict[str, Any]:
+        """Return the payload in evaluator launch configuration format."""
         payload: dict[str, Any] = {
             "ptx": self.ptx,
             "num_threads_x": self.threads_x,
