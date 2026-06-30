@@ -65,6 +65,12 @@ from .level3 import (
     LinearSigmoidSumKernel,
     LinearSwishDivideClampTanhClampKernel,
 )
+from .specials import (
+    DifferenceOfSquaresKernel,
+    MonteCarloPiKernel,
+    TrigonometricIdentityKernel,
+)
+
 
 def available_kernels() -> dict[str, type]:
     return {operator.__name__: operator for operator in kernel_list}
@@ -79,6 +85,9 @@ def resolve_kernel(name: str) -> type:
 
 
 kernel_list = [
+    DifferenceOfSquaresKernel,
+    MonteCarloPiKernel,
+    TrigonometricIdentityKernel,
     AvgPool1dKernel,
     AvgPool2dKernel,
     AvgPool3dKernel,
