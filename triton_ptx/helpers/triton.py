@@ -8,6 +8,7 @@ import shutil
 import time
 import uuid
 from pathlib import Path
+import os
 
 import triton
 import triton.language as tl
@@ -15,40 +16,21 @@ from triton.compiler.compiler import CompiledKernel
 
 
 def clear_triton_cache() -> None:
-    """Remove Triton's local compilation cache if it exists.
+    """Remove Triton's local compilation cache if it exists."""
+    cache = Path(
+        os.environ.get(
+            "TRITON_CACHE_DIR",
+            Path.home() / ".triton" / "cache",
+        )
+    )
 
-    The cache directory is first renamed when possible so concurrent readers are
-    less likely to observe a partially deleted tree. Deletion is retried a few
-    times to tolerate transient filesystem races.
-    """
-    cache = Path.home() / ".triton" / "cache"
     if not cache.exists():
         return
 
-    delete_target = cache
-    renamed_cache = cache.with_name(f"{cache.name}.deleting.{uuid.uuid4().hex}")
     try:
-        cache.replace(renamed_cache)
-        delete_target = renamed_cache
-    except FileNotFoundError:
-        return
-    except OSError:
-        # If the rename races with another process, fall back to deleting the
-        # live cache path directly.
-        delete_target = cache
-
-    for attempt in range(3):
-        try:
-            shutil.rmtree(delete_target)
-            print(f"Cache cleared: {cache}")
-            return
-        except FileNotFoundError:
-            return
-        except OSError as exc:
-            if exc.errno not in (errno.ENOTEMPTY, errno.EBUSY, errno.EPERM) or attempt == 2:
-                print(f"Warning: failed to fully clear Triton cache at {cache}: {exc}")
-                return
-            time.sleep(0.1 * (attempt + 1))
+        shutil.rmtree(cache)
+    except OSError as exc:
+        print(f"Warning: failed to clear Triton cache at {cache}: {exc}")
 
 
 def extract_ptx(
