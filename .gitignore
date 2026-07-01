@@ -107,3 +107,4 @@ openai_api_key.txt
 /triton_ptx/client/prompts/initial/
 /triton_ptx/client/prompts/follow_up/
 /tmp/
+/tmp_files/

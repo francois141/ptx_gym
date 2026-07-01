@@ -13,6 +13,8 @@ _EXPORTS = {
     "TritonPTXCandidateEvaluator": "triton_ptx.evaluation.evaluate",
     "benchmark_operator": "triton_ptx.evaluation.evaluate",
     "compile_ptx": "triton_ptx.evaluation.compilation",
+    "diagnose_ptx": "triton_ptx.evaluation.sanitizer",
+    "run_candidate": "triton_ptx.evaluation.run_candidate",
     "evaluate_ptx_performance": "triton_ptx.evaluation.performance",
     "run_ptx_compilation": "triton_ptx.evaluation.compilation",
 }

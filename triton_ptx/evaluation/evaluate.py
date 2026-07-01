@@ -3,6 +3,7 @@ from __future__ import annotations
 from triton_ptx.evaluation.base import BaseCandidateEvaluator
 from triton_ptx.evaluation.compilation import compile_ptx
 from triton_ptx.evaluation.performance import evaluate_ptx_performance
+from triton_ptx.evaluation.sanitizer import diagnose_ptx
 from triton_ptx.evaluation.types import EvaluatedCandidate, Payload
 from triton_ptx.evaluation.verification import OutputVerifier
 from triton_ptx.helpers.triton import clear_triton_cache
@@ -51,6 +52,40 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
                 compile_output=compile_output,
                 compile_error=compile_error,
             )
+        try:
+            sanitizer_report = diagnose_ptx(
+                self.kernel_name,
+                launch_payload,
+                sanitizer_tool="all",
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return EvaluatedCandidate.failed(
+                kernel_name=self.kernel_name,
+                git_commit_hash=self.git_commit_hash,
+                payload=launch_payload,
+                compiles=True,
+                correct=False,
+                message=f"Sanitizer check crashed: {type(exc).__name__}: {exc}",
+                compile_output=compile_output,
+                compile_error=compile_error,
+            )
+
+        if sanitizer_report.get("clean") is not True:
+            sanitizer_error = sanitizer_report.get("error")
+            message = "Sanitizer check failed"
+            if isinstance(sanitizer_error, str) and sanitizer_error:
+                message = f"{message}: {sanitizer_error}"
+            return EvaluatedCandidate.failed(
+                kernel_name=self.kernel_name,
+                git_commit_hash=self.git_commit_hash,
+                payload=launch_payload,
+                compiles=True,
+                correct=False,
+                message=message,
+                compile_output=compile_output,
+                compile_error=compile_error,
+                sanitizer_report=sanitizer_report,
+            )
 
         try:
             operator = self.operator_cls(ptx=launch_payload)
@@ -68,6 +103,7 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
                 message=f"Correctness check crashed: {type(exc).__name__}: {exc}",
                 compile_output=compile_output,
                 compile_error=compile_error,
+                sanitizer_report=sanitizer_report,
                 verifier_report={},
             )
 
@@ -81,6 +117,7 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
                 message="Correctness check failed",
                 compile_output=compile_output,
                 compile_error=compile_error,
+                sanitizer_report=sanitizer_report,
                 verifier_report=verifier_report,
             )
 
@@ -118,6 +155,7 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
                 ),
                 compile_output=compile_output,
                 compile_error=compile_error,
+                sanitizer_report=sanitizer_report,
                 verifier_report=verifier_report,
             )
 
@@ -132,5 +170,6 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
                 compile_output=compile_output,
                 compile_error=compile_error,
                 timing_error=str(exc),
+                sanitizer_report=sanitizer_report,
                 verifier_report=verifier_report,
             )

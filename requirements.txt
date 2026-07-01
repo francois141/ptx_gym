@@ -2,5 +2,6 @@ openai
 anthropic
 google-genai
 omegaconf
+orjson
 pytest
 torch

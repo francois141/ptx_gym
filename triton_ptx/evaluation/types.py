@@ -4,7 +4,7 @@ import json
 import math
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, cast
 
 
 @dataclass(frozen=True)
@@ -25,7 +25,9 @@ class Payload:
             if value is not None and (
                 not isinstance(value, int) or isinstance(value, bool) or value <= 0
             ):
-                raise ValueError(f'Candidate payload field "{name}" must be a positive integer.')
+                raise ValueError(
+                    f'Candidate payload field "{name}" must be a positive integer.'
+                )
 
     @classmethod
     def from_input(cls, payload: Payload | dict[str, Any]) -> Payload:
@@ -36,7 +38,10 @@ class Payload:
 
         return cls(
             ptx=payload.get("ptx", ""),
-            threads_x=payload.get("threads_x", payload.get("num_threads_x")),
+            threads_x=cast(
+                int,
+                payload.get("threads_x", payload.get("num_threads_x")),
+            ),
             threads_y=payload.get("threads_y", payload.get("num_threads_y")),
             threads_z=payload.get("threads_z", payload.get("num_threads_z")),
         )
@@ -57,7 +62,9 @@ class Payload:
 def _json_safe(value: Any) -> Any:
     if isinstance(value, dict):
         return {
-            key if isinstance(key, (str, int, float, bool)) or key is None else str(key): _json_safe(item)
+            key
+            if isinstance(key, (str, int, float, bool)) or key is None
+            else str(key): _json_safe(item)
             for key, item in value.items()
         }
 
@@ -120,6 +127,7 @@ class EvaluatedCandidate:
     compile_output: str = field(default="", compare=False)
     compile_error: str = field(default="", compare=False)
     timing_error: str = field(default="", compare=False)
+    sanitizer_report: dict[str, object] = field(default_factory=dict, compare=False)
     verifier_report: dict[str, Any] = field(default_factory=dict, compare=False)
 
     def __post_init__(self):
@@ -138,6 +146,7 @@ class EvaluatedCandidate:
         compile_output: str = "",
         compile_error: str = "",
         timing_error: str = "",
+        sanitizer_report: dict[str, object] | None = None,
         verifier_report: dict[str, Any] | None = None,
     ) -> EvaluatedCandidate:
         return cls(
@@ -163,6 +172,7 @@ class EvaluatedCandidate:
             compile_output=compile_output,
             compile_error=compile_error,
             timing_error=timing_error,
+            sanitizer_report=sanitizer_report or {},
             verifier_report=verifier_report or {},
         )
 
