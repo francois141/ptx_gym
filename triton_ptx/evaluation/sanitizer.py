@@ -24,16 +24,12 @@ SANITIZER_TOOLS: tuple[SingleSanitizerTool, ...] = (
 )
 SANITIZER_OPTIONS = ("all", *SANITIZER_TOOLS)
 ERROR_EXIT_CODE = 99
+MAX_REPORTED_ERRORS = 10
 SANITIZER_ENV_VAR = "PTX_MEMORY_SANITIZER"
 TMP_FILES_DIR = Path(__file__).resolve().parents[2] / "tmp_files"
 SANITIZER_PREFIX = "========= "
 SUMMARY_PATTERN = re.compile(
     r"(?:ERROR SUMMARY:|RACECHECK SUMMARY:.*?\()\s*(\d+)\s+errors?",
-    re.IGNORECASE,
-)
-LOCATION_PATTERN = re.compile(
-    r"^(?:at |by thread |address |block |thread |location |read access |"
-    r"write access |saved host backtrace|#\d+)",
     re.IGNORECASE,
 )
 
@@ -47,7 +43,6 @@ def _parse_sanitizer_output(output: str) -> dict[str, object]:
     summary = next(filter(None, map(SUMMARY_PATTERN.search, reversed(lines))), None)
     return {
         "error_count": int(summary.group(1)) if summary else None,
-        "locations": [line for line in lines if LOCATION_PATTERN.match(line)],
         "diagnostics": [
             line
             for line in lines
@@ -75,6 +70,10 @@ def _run_sanitizer_tool(
                 sanitizer_path,
                 "--tool",
                 sanitizer_tool,
+                "--show-backtrace",
+                "device",
+                "--print-limit",
+                str(MAX_REPORTED_ERRORS),
                 "--error-exitcode",
                 str(ERROR_EXIT_CODE),
                 sys.executable,
@@ -99,7 +98,6 @@ def _run_sanitizer_tool(
                 else f"Failed to start Compute Sanitizer: {error}"
             ),
             **({"diagnostics": [str(error)]} if timed_out else {}),
-            "locations": [],
         }
 
     parsed = _parse_sanitizer_output(f"{completed.stdout}\n{completed.stderr}")
@@ -129,7 +127,7 @@ def diagnose_ptx(
         timeout_seconds: Maximum runtime in seconds for each analysis.
 
     Returns:
-        Structured availability, execution, bug, and location results.
+        Structured availability, execution, and diagnostic results.
 
     Raises:
         ValueError: If an option or candidate payload is invalid.
@@ -153,10 +151,8 @@ def diagnose_ptx(
             "clean": False,
             "tool": sanitizer_tool,
             "error": (
-                f"{SANITIZER_ENV_VAR} is not set to the Compute Sanitizer "
-                "executable path."
+                f"{SANITIZER_ENV_VAR} is not set to the Compute Sanitizer executable path."
             ),
-            "locations": [],
         }
 
     request = {
@@ -174,10 +170,15 @@ def diagnose_ptx(
             if sanitizer_tool == "all"
             else (cast(SingleSanitizerTool, sanitizer_tool),)
         )
-        reports = [
-            _run_sanitizer_tool(sanitizer_path, tool, request_path, timeout_seconds)
-            for tool in tools
-        ]
+        reports: list[dict[str, object]] = []
+        for tool in tools:
+            report = _run_sanitizer_tool(
+                sanitizer_path, tool, request_path, timeout_seconds
+            )
+            if report["clean"] is not True:
+                return report
+            reports.append(report)
+
         if sanitizer_tool != "all":
             return reports[0]
         return {
@@ -185,11 +186,6 @@ def diagnose_ptx(
             "clean": all(report["clean"] is True for report in reports),
             "tool": "all",
             "reports": reports,
-            "locations": [
-                location
-                for report in reports
-                for location in cast(list[str], report["locations"])
-            ],
         }
     finally:
         shutil.rmtree(request_dir)
