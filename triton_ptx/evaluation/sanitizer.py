@@ -32,13 +32,74 @@ SUMMARY_PATTERN = re.compile(
     r"(?:ERROR SUMMARY:|RACECHECK SUMMARY:.*?\()\s*(\d+)\s+errors?",
     re.IGNORECASE,
 )
+LOCATION_PATTERN = re.compile(r"candidate\.ptx:(\d+)(?::\d+)?")
+FILE_DIRECTIVE_PATTERN = re.compile(r"^\s*\.file\s+(\d+)\b", re.MULTILINE)
+
+
+def _add_ptx_line_information(ptx: str) -> str:
+    """Map executable PTX instructions to their original source lines.
+
+    Args:
+        ptx: Candidate PTX source.
+
+    Returns:
+        PTX containing ``.file`` and ``.loc`` directives for Compute Sanitizer.
+    """
+    file_ids = (int(match) for match in FILE_DIRECTIVE_PATTERN.findall(ptx))
+    file_id = max(file_ids, default=0) + 1
+    annotated_lines: list[str] = []
+    file_directive = f'.file {file_id} "candidate.ptx"'
+    file_directive_added = False
+    brace_depth = 0
+
+    for line_number, line in enumerate(ptx.splitlines(), start=1):
+        stripped = line.strip()
+        if not file_directive_added and not stripped.startswith("//") and re.search(r"\.(?:entry|func)\b", stripped):
+            annotated_lines.append(file_directive)
+            file_directive_added = True
+        is_instruction = brace_depth > 0 and stripped.endswith(";") and not stripped.startswith((".", "//"))
+        if is_instruction:
+            indentation = line[: len(line) - len(line.lstrip())]
+            annotated_lines.append(f"{indentation}.loc {file_id} {line_number} 0")
+        annotated_lines.append(line)
+        code = line.split("//", maxsplit=1)[0]
+        brace_depth += code.count("{") - code.count("}")
+
+    if not file_directive_added:
+        annotated_lines.append(file_directive)
+
+    if ptx.endswith("\n"):
+        return "\n".join(annotated_lines) + "\n"
+    return "\n".join(annotated_lines)
+
+
+def _reported_ptx_locations(diagnostics: list[str], ptx: str) -> list[dict[str, object]]:
+    """Extract unique candidate PTX locations named in sanitizer diagnostics.
+
+    Args:
+        diagnostics: Normalized Compute Sanitizer diagnostic lines.
+        ptx: Original, unannotated PTX source.
+
+    Returns:
+        Locations containing original one-based line numbers and source text.
+    """
+    source_lines = ptx.splitlines()
+    line_numbers = {
+        int(match.group(1)) for diagnostic in diagnostics for match in LOCATION_PATTERN.finditer(diagnostic)
+    }
+    return [
+        {
+            "line": line_number,
+            "source": source_lines[line_number - 1].strip(),
+        }
+        for line_number in sorted(line_numbers)
+        if line_number <= len(source_lines)
+    ]
 
 
 def _parse_sanitizer_output(output: str) -> dict[str, object]:
     lines = [
-        line
-        for raw_line in output.splitlines()
-        if (line := raw_line.strip().removeprefix(SANITIZER_PREFIX).strip())
+        line for raw_line in output.splitlines() if (line := raw_line.strip().removeprefix(SANITIZER_PREFIX).strip())
     ]
     summary = next(filter(None, map(SUMMARY_PATTERN.search, reversed(lines))), None)
     return {
@@ -63,6 +124,7 @@ def _run_sanitizer_tool(
     sanitizer_tool: SingleSanitizerTool,
     request_path: Path,
     timeout_seconds: int,
+    ptx: str,
 ) -> dict[str, object]:
     try:
         completed = subprocess.run(
@@ -101,12 +163,22 @@ def _run_sanitizer_tool(
         }
 
     parsed = _parse_sanitizer_output(f"{completed.stdout}\n{completed.stderr}")
+    diagnostics = cast(list[str], parsed["diagnostics"])
+    ptx_locations = _reported_ptx_locations(diagnostics, ptx)
+    location_error = (
+        "PTX memory error at "
+        + ", ".join(f"line {location['line']}: {location['source']}" for location in ptx_locations)
+        if ptx_locations
+        else None
+    )
     return {
         "available": True,
         "clean": completed.returncode == 0 and parsed["error_count"] == 0,
         "tool": sanitizer_tool,
         "returncode": completed.returncode,
         **parsed,
+        "ptx_locations": ptx_locations,
+        **({"error": location_error} if location_error else {}),
     }
 
 
@@ -147,29 +219,30 @@ def diagnose_ptx(
             "available": False,
             "clean": False,
             "tool": sanitizer_tool,
-            "error": (
-                f"{SANITIZER_ENV_VAR} is not set to the Compute Sanitizer executable path."
-            ),
+            "error": (f"{SANITIZER_ENV_VAR} is not set to the Compute Sanitizer executable path."),
         }
 
     request = {
         "kernel_name": kernel_name,
-        "candidate": normalized_candidate,
+        "candidate": {
+            **normalized_candidate,
+            "ptx": _add_ptx_line_information(cast(str, normalized_candidate["ptx"])),
+        },
     }
     request_dir = TMP_FILES_DIR / uuid4().hex
     request_dir.mkdir(parents=True)
     request_path = request_dir / "request.json"
     try:
         request_path.write_bytes(orjson.dumps(request))
-        tools = (
-            SANITIZER_TOOLS
-            if sanitizer_tool == "all"
-            else (cast(SingleSanitizerTool, sanitizer_tool),)
-        )
+        tools = SANITIZER_TOOLS if sanitizer_tool == "all" else (cast(SingleSanitizerTool, sanitizer_tool),)
         reports: list[dict[str, object]] = []
         for tool in tools:
             report = _run_sanitizer_tool(
-                sanitizer_path, tool, request_path, timeout_seconds
+                sanitizer_path,
+                tool,
+                request_path,
+                timeout_seconds,
+                cast(str, normalized_candidate["ptx"]),
             )
             if report["clean"] is not True:
                 return report
