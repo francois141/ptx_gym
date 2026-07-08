@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from triton_ptx.evaluation.base import BaseCandidateEvaluator
 from triton_ptx.evaluation.compilation import compile_ptx
+from triton_ptx.evaluation.ncu import profile_ptx_with_ncu
 from triton_ptx.evaluation.performance import evaluate_ptx_performance
 from triton_ptx.evaluation.sanitizer import diagnose_ptx
 from triton_ptx.evaluation.types import EvaluatedCandidate, Payload
@@ -129,6 +130,11 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
             if ptx_timing is None:
                 raise RuntimeError("PTX timing metrics were not produced.")
 
+            ncu_report = profile_ptx_with_ncu(
+                self.kernel_name,
+                payload,
+            ).to_dict()
+
             return EvaluatedCandidate(
                 kernel_name=self.kernel_name,
                 git_commit_hash=self.git_commit_hash,
@@ -148,13 +154,10 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
                 p90=float(ptx_timing.p90),
                 p95=float(ptx_timing.p95),
                 p99=float(ptx_timing.p99),
-                speedup_vs_triton=(
-                    float(triton_timing.p50 / ptx_timing.p50)
-                    if ptx_timing.p50 > 0
-                    else None
-                ),
+                speedup_vs_triton=(float(triton_timing.p50 / ptx_timing.p50) if ptx_timing.p50 > 0 else None),
                 compile_output=compile_output,
                 compile_error=compile_error,
+                ncu_report=ncu_report,
                 sanitizer_report=sanitizer_report,
                 verifier_report=verifier_report,
             )

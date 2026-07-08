@@ -22,12 +22,8 @@ class Payload:
 
         for name in ("threads_x", "threads_y", "threads_z"):
             value = getattr(self, name)
-            if value is not None and (
-                not isinstance(value, int) or isinstance(value, bool) or value <= 0
-            ):
-                raise ValueError(
-                    f'Candidate payload field "{name}" must be a positive integer.'
-                )
+            if value is not None and (not isinstance(value, int) or isinstance(value, bool) or value <= 0):
+                raise ValueError(f'Candidate payload field "{name}" must be a positive integer.')
 
     @classmethod
     def from_input(cls, payload: Payload | dict[str, Any]) -> Payload:
@@ -62,9 +58,7 @@ class Payload:
 def _json_safe(value: Any) -> Any:
     if isinstance(value, dict):
         return {
-            key
-            if isinstance(key, (str, int, float, bool)) or key is None
-            else str(key): _json_safe(item)
+            key if isinstance(key, (str, int, float, bool)) or key is None else str(key): _json_safe(item)
             for key, item in value.items()
         }
 
@@ -127,6 +121,7 @@ class EvaluatedCandidate:
     compile_output: str = field(default="", compare=False)
     compile_error: str = field(default="", compare=False)
     timing_error: str = field(default="", compare=False)
+    ncu_report: dict[str, Any] = field(default_factory=dict, compare=False)
     sanitizer_report: dict[str, object] = field(default_factory=dict, compare=False)
     verifier_report: dict[str, Any] = field(default_factory=dict, compare=False)
 
@@ -146,6 +141,7 @@ class EvaluatedCandidate:
         compile_output: str = "",
         compile_error: str = "",
         timing_error: str = "",
+        ncu_report: dict[str, Any] | None = None,
         sanitizer_report: dict[str, object] | None = None,
         verifier_report: dict[str, Any] | None = None,
     ) -> EvaluatedCandidate:
@@ -172,6 +168,7 @@ class EvaluatedCandidate:
             compile_output=compile_output,
             compile_error=compile_error,
             timing_error=timing_error,
+            ncu_report=ncu_report or {},
             sanitizer_report=sanitizer_report or {},
             verifier_report=verifier_report or {},
         )
