@@ -114,7 +114,6 @@ def diagnose_ptx(
     kernel_name: str,
     candidate: dict[str, object],
     sanitizer_tool: str = "all",
-    diagnostic_size: int = 128,
     timeout_seconds: int = 120,
 ) -> dict[str, object]:
     """Run a PTX candidate under NVIDIA Compute Sanitizer.
@@ -123,7 +122,6 @@ def diagnose_ptx(
         kernel_name: Registered kernel class used to construct inputs and the grid.
         candidate: PTX text and launch dimensions accepted by ``Payload``.
         sanitizer_tool: Analysis to perform, or ``all`` to run every analysis.
-        diagnostic_size: Representative size for configurable random inputs.
         timeout_seconds: Maximum runtime in seconds for each analysis.
 
     Returns:
@@ -137,7 +135,6 @@ def diagnose_ptx(
             sanitizer_tool not in SANITIZER_OPTIONS,
             f"sanitizer_tool must be one of: {', '.join(SANITIZER_OPTIONS)}.",
         ),
-        (diagnostic_size <= 0, "diagnostic_size must be positive."),
         (timeout_seconds <= 0, "timeout_seconds must be positive."),
     )
     if message := next((message for failed, message in invalid if failed), None):
@@ -158,7 +155,6 @@ def diagnose_ptx(
     request = {
         "kernel_name": kernel_name,
         "candidate": normalized_candidate,
-        "diagnostic_size": diagnostic_size,
     }
     request_dir = TMP_FILES_DIR / uuid4().hex
     request_dir.mkdir(parents=True)
@@ -208,15 +204,12 @@ def _run_request(request_path: Path) -> None:
 
     kernel_name = request.get("kernel_name")
     candidate = request.get("candidate")
-    diagnostic_size = request.get("diagnostic_size")
     if not isinstance(kernel_name, str):
         raise TypeError("Sanitizer request kernel_name must be a string.")
     if not isinstance(candidate, dict):
         raise TypeError("Sanitizer request candidate must be a JSON object.")
-    if not isinstance(diagnostic_size, int):
-        raise TypeError("Sanitizer request diagnostic_size must be an integer.")
 
-    run_candidate(kernel_name, candidate, diagnostic_size)
+    run_candidate(kernel_name, candidate)
 
 
 def _main() -> None:

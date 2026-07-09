@@ -12,7 +12,7 @@ def _run_request(request_path: Path) -> None:
     """Execute one serialized Nsight Compute launch request.
 
     Args:
-        request_path: JSON request containing the kernel, candidate, and size.
+        request_path: JSON request containing the kernel and candidate.
 
     Raises:
         TypeError: If the request does not contain the expected value types.
@@ -23,15 +23,12 @@ def _run_request(request_path: Path) -> None:
 
     kernel_name = request.get("kernel_name")
     candidate = request.get("candidate")
-    input_size = request.get("input_size")
     if not isinstance(kernel_name, str):
         raise TypeError("NCU request kernel_name must be a string.")
     if not isinstance(candidate, dict):
         raise TypeError("NCU request candidate must be a JSON object.")
-    if not isinstance(input_size, int):
-        raise TypeError("NCU request input_size must be an integer.")
 
-    run_candidate(kernel_name, candidate, input_size)
+    run_candidate(kernel_name, candidate)
 
 
 def _main() -> None:
