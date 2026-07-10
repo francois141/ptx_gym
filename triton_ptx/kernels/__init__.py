@@ -67,6 +67,7 @@ from .level3 import (
 )
 from .specials import (
     DifferenceOfSquaresKernel,
+    InverseSquareRootKernel,
     MonteCarloPiKernel,
     TrigonometricIdentityKernel,
 )
@@ -86,6 +87,7 @@ def resolve_kernel(name: str) -> type:
 
 kernel_list = [
     DifferenceOfSquaresKernel,
+    InverseSquareRootKernel,
     MonteCarloPiKernel,
     TrigonometricIdentityKernel,
     AvgPool1dKernel,
