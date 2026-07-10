@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import subprocess
+from importlib import import_module
 from pathlib import Path
 
 import pytest
 
 from triton_ptx.evaluation.sanitizer import (
     _add_ptx_line_information,
+    _run_request,
     _run_sanitizer_tool,
     _reported_ptx_locations,
+    _sanitizer_input_kwargs,
 )
 
 
@@ -70,3 +73,47 @@ def test_sanitizer_report_error_names_ptx_line(monkeypatch: pytest.MonkeyPatch, 
     )
 
     assert report["error"] == ("PTX memory error at line 2: st.global.u32 [address], 1;")
+
+
+def test_sanitizer_input_kwargs_match_verifier_matrix_sizes() -> None:
+    """Exercise matrix multiplication with every verifier k size."""
+    assert _sanitizer_input_kwargs("MatrixMultiplicationKernel") == [
+        {"k": 16},
+        {"k": 32},
+        {"k": 64},
+        {"k": 128},
+        {"k": 256},
+    ]
+
+
+def test_run_request_launches_all_input_kwargs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Launch every sanitizer testcase from the serialized request."""
+    calls: list[dict[str, int]] = []
+    request_path = tmp_path / "request.json"
+    request_path.write_text(
+        (
+            '{"kernel_name":"MatrixMultiplicationKernel",'
+            '"candidate":{"ptx":"// ptx","num_threads_x":128},'
+            '"input_kwargs":[{"k":16},{"k":32}]}'
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_run_candidate(
+        kernel_name: str,
+        candidate: dict[str, object],
+        input_kwargs: dict[str, int],
+    ) -> None:
+        assert kernel_name == "MatrixMultiplicationKernel"
+        assert candidate["num_threads_x"] == 128
+        calls.append(input_kwargs)
+
+    run_candidate_module = import_module("triton_ptx.evaluation.run_candidate")
+    monkeypatch.setattr(run_candidate_module, "run_candidate", fake_run_candidate)
+
+    _run_request(request_path)
+
+    assert calls == [{"k": 16}, {"k": 32}]

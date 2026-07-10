@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Protocol
 
 import torch
@@ -21,6 +22,7 @@ class _CandidateOperator(Protocol):
 def run_candidate(
     kernel_name: str,
     candidate: dict[str, object],
+    input_kwargs: Mapping[str, int] | None = None,
 ) -> None:
     """Launch a PTX candidate once and wait for CUDA completion.
 
@@ -30,6 +32,8 @@ def run_candidate(
     Args:
         kernel_name: Registered kernel class used to construct inputs and the grid.
         candidate: PTX text and launch dimensions accepted by ``Payload``.
+        input_kwargs: Optional integer keyword arguments passed to
+            ``get_random_input``.
 
     Raises:
         RuntimeError: If CUDA is unavailable.
@@ -40,6 +44,6 @@ def run_candidate(
 
     payload = Payload.from_input(candidate)
     operator = resolve_kernel(kernel_name)(ptx=payload.to_launch_dict())
-    inputs = operator.get_random_input()
+    inputs = operator.get_random_input(**(dict(input_kwargs) if input_kwargs else {}))
     operator.forward_triton(inputs, ptx=True)
     torch.cuda.synchronize()

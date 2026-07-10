@@ -1,18 +1,30 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import os
 import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal, Protocol, cast
 from uuid import uuid4
 
 import orjson
 
 from triton_ptx.evaluation.types import Payload
+from triton_ptx.evaluation.verification import DEFAULT_VERIFICATION_SIZES
+from triton_ptx.kernels import resolve_kernel
+
+
+class _KernelClass(Protocol):
+    """Kernel class surface needed to inspect random-input parameters."""
+
+    def get_random_input(self, **kwargs: int) -> object:
+        """Create random inputs for a candidate launch."""
+
 
 SingleSanitizerTool = Literal["memcheck", "racecheck", "synccheck", "initcheck"]
 SanitizerTool = Literal["all", "memcheck", "racecheck", "synccheck", "initcheck"]
@@ -34,6 +46,49 @@ SUMMARY_PATTERN = re.compile(
 )
 LOCATION_PATTERN = re.compile(r"candidate\.ptx:(\d+)(?::\d+)?")
 FILE_DIRECTIVE_PATTERN = re.compile(r"^\s*\.file\s+(\d+)\b", re.MULTILINE)
+
+
+def _is_size_arg(name: str) -> bool:
+    """Return whether an input keyword should receive verifier sizes."""
+    normalized_name = name.lower()
+    return any(token in normalized_name for token in ("size", "m", "n", "k", "h", "w", "len")) and not any(
+        token in normalized_name for token in ("kernel", "stride", "block", "tile")
+    )
+
+
+def _input_kwargs_for_size(kernel_name: str, size: int) -> dict[str, int]:
+    """Build ``get_random_input`` kwargs for a verifier size.
+
+    Args:
+        kernel_name: Registered kernel class.
+        size: Verifier size to apply to size-like optional input arguments.
+
+    Returns:
+        Keyword arguments accepted by the kernel's ``get_random_input`` method.
+
+    Raises:
+        ValueError: If the kernel name cannot be resolved.
+    """
+    kernel_cls = cast(type[_KernelClass], resolve_kernel(kernel_name))
+    get_random_input = kernel_cls.get_random_input
+    return {
+        name: size if _is_size_arg(name) else 4
+        for name, parameter in inspect.signature(get_random_input).parameters.items()
+        if name != "self" and parameter.default is not inspect._empty
+    }
+
+
+def _sanitizer_input_kwargs(kernel_name: str) -> list[dict[str, int]]:
+    """Return unique sanitizer input kwargs matching verifier coverage."""
+    seen: set[tuple[tuple[str, int], ...]] = set()
+    input_kwargs: list[dict[str, int]] = []
+    for size in DEFAULT_VERIFICATION_SIZES:
+        kwargs = _input_kwargs_for_size(kernel_name, size)
+        key = tuple(sorted(kwargs.items()))
+        if key not in seen:
+            seen.add(key)
+            input_kwargs.append(kwargs)
+    return input_kwargs or [{}]
 
 
 def _add_ptx_line_information(ptx: str) -> str:
@@ -228,6 +283,7 @@ def diagnose_ptx(
             **normalized_candidate,
             "ptx": _add_ptx_line_information(cast(str, normalized_candidate["ptx"])),
         },
+        "input_kwargs": _sanitizer_input_kwargs(kernel_name),
     }
     request_dir = TMP_FILES_DIR / uuid4().hex
     request_dir.mkdir(parents=True)
@@ -264,7 +320,8 @@ def _run_request(request_path: Path) -> None:
     """Load and execute one sanitizer child-process request.
 
     Args:
-        request_path: Path to the serialized launch request.
+        request_path: Path to the serialized launch request. Requests may include
+            ``input_kwargs`` as a list of integer keyword mappings.
 
     Raises:
         TypeError: If the serialized request has an invalid shape.
@@ -282,7 +339,17 @@ def _run_request(request_path: Path) -> None:
     if not isinstance(candidate, dict):
         raise TypeError("Sanitizer request candidate must be a JSON object.")
 
-    run_candidate(kernel_name, candidate)
+    input_kwargs = request.get("input_kwargs", [{}])
+    if not isinstance(input_kwargs, list):
+        raise TypeError("Sanitizer request input_kwargs must be a list.")
+
+    for kwargs in input_kwargs:
+        if not isinstance(kwargs, Mapping) or any(
+            not isinstance(name, str) or not isinstance(value, int) or isinstance(value, bool) or value <= 0
+            for name, value in kwargs.items()
+        ):
+            raise TypeError("Sanitizer request input_kwargs entries must map strings to positive integers.")
+        run_candidate(kernel_name, candidate, kwargs)
 
 
 def _main() -> None:

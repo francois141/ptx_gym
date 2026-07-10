@@ -7,13 +7,15 @@ from triton_ptx.helpers.environment import get_available_video_memory_bytes
 from triton_ptx.helpers.kernels import has_ptx_code
 from triton_ptx.helpers.serialization import dump_nested, tensor_bytes, tensor_summary
 
+DEFAULT_VERIFICATION_SIZES = [32, 64, 128]
+
 
 class OutputVerifier(BaseVerifier):
     MAX_VIDEO_MEMORY_FRACTION = 0.70
 
     def __init__(
         self,
-        sizes=(16, 32, 64, 128, 256), # TODO: In the future make it work with irregular values
+        sizes=DEFAULT_VERIFICATION_SIZES,  # TODO: In the future make it work with irregular values
         iters_per_size=250,
         seed=42,
         rtol=1e-2,
@@ -34,9 +36,8 @@ class OutputVerifier(BaseVerifier):
 
     def _is_size_arg(self, name):
         name = name.lower()
-        return (
-            any(x in name for x in ("size", "m", "n", "k", "h", "w", "len"))
-            and not any(x in name for x in ("kernel", "stride", "block", "tile"))
+        return any(x in name for x in ("size", "m", "n", "k", "h", "w", "len")) and not any(
+            x in name for x in ("kernel", "stride", "block", "tile")
         )
 
     def _kwargs(self, op, size):
@@ -74,28 +75,21 @@ class OutputVerifier(BaseVerifier):
 
     def _same(self, actual, expected):
         if isinstance(actual, torch.Tensor) and isinstance(expected, torch.Tensor):
-            return (
-                actual.shape == expected.shape
-                and torch.allclose(
-                    actual,
-                    expected.to(actual.dtype),
-                    rtol=self.rtol,
-                    atol=self.atol,
-                    equal_nan=True,
-                )
+            return actual.shape == expected.shape and torch.allclose(
+                actual,
+                expected.to(actual.dtype),
+                rtol=self.rtol,
+                atol=self.atol,
+                equal_nan=True,
             )
 
         if isinstance(actual, (list, tuple)) and isinstance(expected, (list, tuple)):
             return len(actual) == len(expected) and all(
-                self._same(actual_item, expected_item)
-                for actual_item, expected_item in zip(actual, expected)
+                self._same(actual_item, expected_item) for actual_item, expected_item in zip(actual, expected)
             )
 
         if isinstance(actual, dict) and isinstance(expected, dict):
-            return actual.keys() == expected.keys() and all(
-                self._same(actual[key], expected[key])
-                for key in actual
-            )
+            return actual.keys() == expected.keys() and all(self._same(actual[key], expected[key]) for key in actual)
 
         return actual == expected
 

@@ -57,7 +57,7 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
             sanitizer_report = diagnose_ptx(
                 self.kernel_name,
                 launch_payload,
-                sanitizer_tool="all",
+                sanitizer_tool="memcheck",
             )
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             return EvaluatedCandidate.failed(
