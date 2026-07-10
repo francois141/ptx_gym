@@ -1,3 +1,9 @@
+from .attention import (
+    CausalDotProductAttentionKernel,
+    DotProductAttentionKernel,
+    GroupedQueryAttentionKernel,
+    MaskedDotProductAttentionKernel,
+)
 from .level1 import (
     AddKernel,
     ArgmaxKernel,
@@ -86,6 +92,10 @@ def resolve_kernel(name: str) -> type:
 
 
 kernel_list = [
+    CausalDotProductAttentionKernel,
+    DotProductAttentionKernel,
+    GroupedQueryAttentionKernel,
+    MaskedDotProductAttentionKernel,
     DifferenceOfSquaresKernel,
     InverseSquareRootKernel,
     MonteCarloPiKernel,
