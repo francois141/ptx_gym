@@ -10,6 +10,7 @@ import torch
 
 _PTXAS_BIN_DIR = (
     Path(__file__).resolve().parents[2]
+    / "triton"
     / "third_party"
     / "nvidia"
     / "backend"
