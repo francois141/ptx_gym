@@ -42,22 +42,21 @@ class MatrixMultiplicationKernel(TritonPTXKernel):
 
         accumulator = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
         for k_start in range(0, tl.cdiv(k_dim, BLOCK_K)):
-            k_remaining = k_dim - k_start * BLOCK_K
-            a = tl.load(a_ptrs, mask=offs_k[None, :] < k_remaining, other=0.0)
-            b = tl.load(b_ptrs, mask=offs_k[:, None] < k_remaining, other=0.0)
+            a = tl.load(a_ptrs)
+            b = tl.load(b_ptrs)
             accumulator = tl.dot(a, b, acc=accumulator, out_dtype=tl.float32, input_precision="ieee")
             a_ptrs += BLOCK_K
             b_ptrs += BLOCK_K * stride_bk
 
         c = accumulator.to(tl.float32)
         c_ptrs = c_ptr + offs_m[:, None] * stride_cm + offs_n[None, :]
-        c_mask = (offs_m[:, None] < 4096) & (offs_n[None, :] < 4096)
-        tl.store(c_ptrs, c, mask=c_mask)
+        tl.store(c_ptrs, c)
 
     def get_random_input(self, k=1024):
         k = min(k, 512)
         a = torch.randn((4096, k), device="cuda", dtype=torch.float32)
         b = torch.randn((k, 4096), device="cuda", dtype=torch.float32)
+        assert k % 32 == 0, "k must be a multiple of 32"
         return a, b
 
     def forward_triton(self, inputs, ptx=False):
