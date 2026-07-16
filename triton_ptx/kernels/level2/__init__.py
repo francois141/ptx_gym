@@ -3,7 +3,10 @@ from .avg_pool2d import AvgPool2dKernel
 from .avg_pool3d import AvgPool3dKernel
 from .conv2d import Conv2dKernel
 from .matrix_addition import MatrixAdditionKernel
-from .matrix_multiplication import MatrixMultiplicationKernel
+from .matrix_multiplication import (
+    MatrixMultiplicationFloat16,
+    MatrixMultiplicationKernel,
+)
 from .matrix_scalar_addition import MatrixScalarAdditionKernel
 from .matrix_vector_multiplication import MatrixVectorMultiplicationKernel
 from .maxpool1d import MaxPool1dKernel

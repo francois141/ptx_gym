@@ -93,3 +93,13 @@ class MatrixMultiplicationKernel(TritonPTXKernel):
     def forward_torch(self, inputs):
         a, b = inputs
         return torch.matmul(a, b)
+
+
+class MatrixMultiplicationFloat16(MatrixMultiplicationKernel):
+
+    def get_random_input(self, k=1024):
+        k = min(k, 512)
+        assert k % 32 == 0, "k must be a multiple of 32"
+        a = torch.randn((4096, k), device="cuda", dtype=torch.float16)
+        b = torch.randn((k, 4096), device="cuda", dtype=torch.float16)
+        return a, b
