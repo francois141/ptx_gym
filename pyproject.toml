@@ -8,7 +8,7 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "triton_ptx"
+name = "triton"
 dynamic = ["version", "dependencies"]
 requires-python = ">=3.10,<3.15"
 
