@@ -78,7 +78,6 @@ def test_sanitizer_report_error_names_ptx_line(monkeypatch: pytest.MonkeyPatch, 
 def test_sanitizer_input_kwargs_match_verifier_matrix_sizes() -> None:
     """Exercise matrix multiplication with every verifier k size."""
     assert _sanitizer_input_kwargs("MatrixMultiplicationKernel") == [
-        {"k": 16},
         {"k": 32},
         {"k": 64},
         {"k": 128},

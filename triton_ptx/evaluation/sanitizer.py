@@ -187,6 +187,8 @@ def _run_sanitizer_tool(
                 sanitizer_path,
                 "--tool",
                 sanitizer_tool,
+                "--target-processes",
+                "application-only",
                 "--show-backtrace",
                 "device",
                 "--print-limit",
@@ -277,32 +279,35 @@ def diagnose_ptx(
             "error": (f"{SANITIZER_ENV_VAR} is not set to the Compute Sanitizer executable path."),
         }
 
+    input_kwargs_list = _sanitizer_input_kwargs(kernel_name)
     request = {
         "kernel_name": kernel_name,
         "candidate": {
             **normalized_candidate,
             "ptx": _add_ptx_line_information(cast(str, normalized_candidate["ptx"])),
         },
-        "input_kwargs": _sanitizer_input_kwargs(kernel_name),
+        "input_kwargs": [{}],
     }
     request_dir = TMP_FILES_DIR / uuid4().hex
     request_dir.mkdir(parents=True)
     request_path = request_dir / "request.json"
     try:
-        request_path.write_bytes(orjson.dumps(request))
         tools = SANITIZER_TOOLS if sanitizer_tool == "all" else (cast(SingleSanitizerTool, sanitizer_tool),)
         reports: list[dict[str, object]] = []
         for tool in tools:
-            report = _run_sanitizer_tool(
-                sanitizer_path,
-                tool,
-                request_path,
-                timeout_seconds,
-                cast(str, normalized_candidate["ptx"]),
-            )
-            if report["clean"] is not True:
-                return report
-            reports.append(report)
+            for input_kwargs in input_kwargs_list:
+                request["input_kwargs"] = [input_kwargs]
+                request_path.write_bytes(orjson.dumps(request))
+                report = _run_sanitizer_tool(
+                    sanitizer_path,
+                    tool,
+                    request_path,
+                    timeout_seconds,
+                    cast(str, normalized_candidate["ptx"]),
+                )
+                if report["clean"] is not True:
+                    return {**report, "input_kwargs": input_kwargs}
+                reports.append(report)
 
         if sanitizer_tool != "all":
             return reports[0]

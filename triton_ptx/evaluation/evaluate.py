@@ -73,7 +73,13 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
 
         if sanitizer_report.get("clean") is not True:
             sanitizer_error = sanitizer_report.get("error")
+            input_kwargs = sanitizer_report.get("input_kwargs")
             message = "Sanitizer check failed"
+            if isinstance(input_kwargs, dict):
+                dimensions = ", ".join(
+                    f"{name}={value}" for name, value in sorted(input_kwargs.items())
+                )
+                message = f"{message} (input: {dimensions or 'default'})"
             if isinstance(sanitizer_error, str) and sanitizer_error:
                 message = f"{message}: {sanitizer_error}"
             return EvaluatedCandidate.failed(
