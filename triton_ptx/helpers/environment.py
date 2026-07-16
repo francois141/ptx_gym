@@ -51,6 +51,7 @@ def _cuda_release_to_ptx_version(cuda_version: str) -> str:
         (13, 0): "9.0",
         (13, 1): "9.1",
         (13, 2): "9.2",
+        (13, 3): "9.3",
     }
 
     key = (major, minor)
