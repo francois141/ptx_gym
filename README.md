@@ -32,9 +32,7 @@ CompilerBench asks a deliberately direct question:
 
 > **Given a Triton kernel, can a language model generate a correct PTX implementation that outperforms the code produced by Triton?**
 
-Instead of asking an LLM to select from a fixed library of compiler passes, CompilerBench lets the model emit low-level GPU code directly. Each candidate is assembled, executed, checked for correctness, benchmarked, and compared with a compiler-generated baseline.
-
-The environment is designed for both **evaluation** and **iterative search**. A model can propose a candidate, inspect structured feedback, and improve the implementation over multiple attempts.
+CompilerBench lets the model emit low-level GPU code directly. Each candidate is assembled, executed, checked for correctness, benchmarked, and compared with a compiler-generated baseline. The environment is designed for both **evaluation** and **iterative search**. A model can propose a candidate, inspect structured feedback, and improve the implementation over multiple attempts.
 
 <p align="center">
   <img src="./workflow.png" alt="CompilerBench evaluation workflow" width="900">
@@ -44,13 +42,7 @@ The environment is designed for both **evaluation** and **iterative search**. A 
 
 Modern GPU compilers are powerful, but their search space is bounded by transformations that compiler engineers have already designed and implemented. Every optimization must also pass conservative legality checks involving aliasing, synchronization, numerical behavior, memory dependencies, and race freedom.
 
-LLMs offer a different path. A model generating PTX directly is not limited to a predefined pass library and may explore combinations of instruction selection, memory access, synchronization, register use, and scheduling that are difficult to express in a conventional optimization pipeline.
-
-<p align="center">
-  <img src="./llm_compilation_pipeline.png" alt="Traditional and LLM-based compilation pipelines" width="900">
-</p>
-
-CompilerBench provides the infrastructure needed to test that idea rigorously.
+LLMs offer a different path. A model generating PTX directly is not limited to a predefined pass library and may explore combinations of instruction selection, memory access, synchronization, register use, and scheduling that are difficult to express in a conventional optimization pipeline. CompilerBench provides the infrastructure needed to test that idea rigorously.
 
 ## What the environment does
 
@@ -68,14 +60,6 @@ The environment is **stateless**: there is no reset operation and no persistent 
 
 ## Quick start
 
-### Requirements
-
-CompilerBench targets NVIDIA GPUs and PTX. You will need:
-
-- An NVIDIA GPU with a compatible driver and CUDA toolchain
-- A Python environment suitable for the project dependencies
-- Permission to compile and execute generated GPU code
-
 > [!CAUTION]
 > Model-generated PTX is untrusted low-level code. Run evaluations on isolated, non-production infrastructure.
 
@@ -88,6 +72,13 @@ python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e .
+```
+
+Then you need to expose the two environment variables:
+
+```bash
+export NCU_PATH=<ncu_path>
+export PTX_MEMORY_SANITIZER=<sanitizer_path>
 ```
 
 ### Evaluate a candidate
