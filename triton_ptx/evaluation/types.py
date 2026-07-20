@@ -83,10 +83,16 @@ def _json_safe(value: Any) -> Any:
         except (TypeError, ValueError):
             pass
 
+    # Infinity/NaN are valid Python floats but not valid JSON tokens; json.dumps
+    # emits bare Infinity/NaN which spec-compliant parsers (e.g. Node) reject.
+    # Represent them as null instead.
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+
     try:
-        json.dumps(value)
+        json.dumps(value, allow_nan=False)
         return value
-    except TypeError:
+    except (TypeError, ValueError):
         return str(value)
 
 
