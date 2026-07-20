@@ -111,19 +111,19 @@ class EvaluatedCandidate:
     compiles: bool = field(compare=False)
     correct: bool = field(compare=False)
     message: str = field(compare=False)
-    triton_p20: float = field(compare=False)
-    triton_p50: float = field(compare=False)
-    triton_p80: float = field(compare=False)
-    triton_p90: float = field(compare=False)
-    triton_p95: float = field(compare=False)
-    triton_p99: float = field(compare=False)
-    p20: float = field(compare=False)
-    p50: float = field(compare=False)
-    p80: float = field(compare=False)
-    p90: float = field(compare=False)
-    p95: float = field(compare=False)
-    p99: float = field(compare=False)
-    speedup_vs_triton: float = field(compare=False)
+    triton_p20: float | None = field(compare=False)
+    triton_p50: float | None = field(compare=False)
+    triton_p80: float | None = field(compare=False)
+    triton_p90: float | None = field(compare=False)
+    triton_p95: float | None = field(compare=False)
+    triton_p99: float | None = field(compare=False)
+    p20: float | None = field(compare=False)
+    p50: float | None = field(compare=False)
+    p80: float | None = field(compare=False)
+    p90: float | None = field(compare=False)
+    p95: float | None = field(compare=False)
+    p99: float | None = field(compare=False)
+    speedup_vs_triton: float | None = field(compare=False)
     compile_output: str = field(default="", compare=False)
     compile_error: str = field(default="", compare=False)
     timing_error: str = field(default="", compare=False)
@@ -158,18 +158,18 @@ class EvaluatedCandidate:
             compiles=compiles,
             correct=correct,
             message=message,
-            triton_p20=math.inf,
-            triton_p50=math.inf,
-            triton_p80=math.inf,
-            triton_p90=math.inf,
-            triton_p95=math.inf,
-            triton_p99=math.inf,
-            p20=math.inf,
-            p50=math.inf,
-            p80=math.inf,
-            p90=math.inf,
-            p95=math.inf,
-            p99=math.inf,
+            triton_p20=None,
+            triton_p50=None,
+            triton_p80=None,
+            triton_p90=None,
+            triton_p95=None,
+            triton_p99=None,
+            p20=None,
+            p50=None,
+            p80=None,
+            p90=None,
+            p95=None,
+            p99=None,
             speedup_vs_triton=0,
             compile_output=compile_output,
             compile_error=compile_error,
@@ -189,7 +189,7 @@ class EvaluatedCandidate:
         if not self.compiles:
             return (1, math.inf)
 
-        return (0, self.p50)
+        return (0, self.p50 if self.p50 is not None else math.inf)
 
     @property
     def passed(self) -> bool:
