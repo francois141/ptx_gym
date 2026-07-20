@@ -8,7 +8,8 @@ Run it with::
 from __future__ import annotations
 
 import argparse
-from typing import Any
+import threading
+from typing import Any, Callable
 
 from flask import Flask, jsonify, request
 from werkzeug.exceptions import HTTPException
@@ -41,6 +42,20 @@ def _required(data: dict[str, Any], key: str) -> Any:
     if key not in data:
         raise BadRequest(f'Missing required field "{key}".')
     return data[key]
+
+
+# Serializes every GPU-touching operation so only one kernel runs on the GPU at
+# a time. Requests from parallel agents queue here instead of overlapping, which
+# keeps benchmark timings free of interference. This is a process-wide lock, so
+# it only serializes within a single server process (do not run multiple worker
+# processes if you need this guarantee).
+_GPU_LOCK = threading.Lock()
+
+
+def _run_on_gpu(fn: Callable[..., Any], *args: Any) -> Any:
+    """Run a GPU-touching operation under the global GPU lock."""
+    with _GPU_LOCK:
+        return fn(*args)
 
 
 def create_app() -> Flask:
@@ -77,15 +92,18 @@ def create_app() -> Flask:
     def _is_gpu_available():
         return jsonify(gpu_available=is_gpu_available())
 
+    # The three endpoints below compile/launch kernels on the GPU, so they run
+    # under _GPU_LOCK; the metadata endpoints above do not touch the GPU.
+
     @app.post("/dump_kernel_ptx")
     def _dump_kernel_ptx():
         kernel_id = _required(_body(), "kernel_id")
-        return jsonify(ptx=dump_kernel_ptx(kernel_id))
+        return jsonify(ptx=_run_on_gpu(dump_kernel_ptx, kernel_id))
 
     @app.post("/get_kernel_data")
     def _get_kernel_data():
         kernel_id = _required(_body(), "kernel_id")
-        return jsonify(get_kernel_data(kernel_id))
+        return jsonify(_run_on_gpu(get_kernel_data, kernel_id))
 
     @app.post("/evaluate_candidate")
     def _evaluate_candidate():
@@ -94,7 +112,7 @@ def create_app() -> Flask:
         payload = _required(data, "payload")
         if not isinstance(payload, dict):
             raise BadRequest('Field "payload" must be a JSON object.')
-        return jsonify(evaluate_candidate(kernel_id, payload))
+        return jsonify(_run_on_gpu(evaluate_candidate, kernel_id, payload))
 
     return app
 
@@ -106,7 +124,15 @@ def main() -> int:
     parser.add_argument("--debug", action="store_true", help="Enable Flask debug mode.")
     args = parser.parse_args()
 
-    create_app().run(host=args.host, port=args.port, debug=args.debug)
+    # threaded=True lets parallel agents connect concurrently; _GPU_LOCK still
+    # serializes the actual GPU work. Keep a single process (no processes=N),
+    # otherwise the in-process lock cannot serialize across workers.
+    create_app().run(
+        host=args.host,
+        port=args.port,
+        debug=args.debug,
+        threaded=True,
+    )
     return 0
 
 
