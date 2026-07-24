@@ -1,6 +1,7 @@
 from .attention import (
     CausalDotProductAttentionKernel,
     DotProductAttentionKernel,
+    FlashAttentionKernel as FlashAttentionKernel,
     GroupedQueryAttentionKernel,
     MaskedDotProductAttentionKernel,
 )
@@ -118,6 +119,7 @@ kernel_list = [
     CumsumKernel,
     ELUKernel,
     FancyFusedKernel,
+    FlashAttentionKernel,
     GELUKernel,
     HardSigmoidKernel,
     HardtanhKernel,
