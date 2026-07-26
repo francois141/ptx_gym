@@ -72,6 +72,9 @@ _METRIC_ALIASES: dict[str, tuple[str, ...]] = {
         "smsp__warp_issue_stalled_mio_throttle_per_warp_active.pct",
         "smsp__warp_issue_stalled_short_scoreboard_per_warp_active.pct",
     ),
+    "scheduler.stall_short_scoreboard_pct": (
+        "smsp__warp_issue_stalled_short_scoreboard_per_warp_active.pct",
+    ),
     "scheduler.stall_long_scoreboard_pct": (
         "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct",
     ),
@@ -84,15 +87,23 @@ _METRIC_ALIASES: dict[str, tuple[str, ...]] = {
     "scheduler.stall_math_pipe_unavailable_pct": (
         "smsp__warp_issue_stalled_math_pipe_throttle_per_warp_active.pct",
     ),
+    "scheduler.stall_mio_throttle_pct": (
+        "smsp__warp_issue_stalled_mio_throttle_per_warp_active.pct",
+    ),
+    "scheduler.stall_lg_throttle_pct": (
+        "smsp__warp_issue_stalled_lg_throttle_per_warp_active.pct",
+    ),
+    "scheduler.stall_wait_pct": ("smsp__warp_issue_stalled_wait_per_warp_active.pct",),
+    "scheduler.stall_branch_resolving_pct": (
+        "smsp__warp_issue_stalled_branch_resolving_per_warp_active.pct",
+    ),
     "scheduler.stall_dispatch_pct": (
         "smsp__warp_issue_stalled_dispatch_stall_per_warp_active.pct",
     ),
     "memory.dram_throughput_pct": (
         "dram__throughput.avg.pct_of_peak_sustained_elapsed",
     ),
-    "memory.l2_throughput_pct": (
-        "lts__throughput.avg.pct_of_peak_sustained_elapsed",
-    ),
+    "memory.l2_throughput_pct": ("lts__throughput.avg.pct_of_peak_sustained_elapsed",),
     "memory.l1_throughput_pct": (
         "l1tex__throughput.avg.pct_of_peak_sustained_elapsed",
     ),
@@ -100,17 +111,43 @@ _METRIC_ALIASES: dict[str, tuple[str, ...]] = {
     "memory.l2_hit_rate_pct": ("lts__t_sector_hit_rate.pct",),
     "memory.dram_bytes_read": ("dram__bytes_read.sum",),
     "memory.dram_bytes_write": ("dram__bytes_write.sum",),
+    "memory.global_load_requests": ("l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum",),
+    "memory.global_store_requests": (
+        "l1tex__t_requests_pipe_lsu_mem_global_op_st.sum",
+    ),
+    "memory.global_load_sectors": ("l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum",),
     "memory.global_load_transactions": (
         "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum",
     ),
+    "memory.global_store_sectors": ("l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum",),
     "memory.global_store_transactions": (
         "l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum",
+    ),
+    "memory.l1_read_sectors": ("l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum",),
+    "memory.l1_write_sectors": ("l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum",),
+    "memory.l2_read_sectors": ("lts__t_sectors_op_read.sum",),
+    "memory.l2_write_sectors": ("lts__t_sectors_op_write.sum",),
+    "memory.shared_load_requests": ("l1tex__t_requests_pipe_lsu_mem_shared_op_ld.sum",),
+    "memory.shared_store_requests": (
+        "l1tex__t_requests_pipe_lsu_mem_shared_op_st.sum",
+    ),
+    "memory.shared_load_wavefronts": (
+        "l1tex__data_pipe_lsu_wavefronts_mem_shared_op_ld.sum",
     ),
     "memory.shared_load_transactions": (
         "l1tex__data_pipe_lsu_wavefronts_mem_shared_op_ld.sum",
     ),
+    "memory.shared_store_wavefronts": (
+        "l1tex__data_pipe_lsu_wavefronts_mem_shared_op_st.sum",
+    ),
     "memory.shared_store_transactions": (
         "l1tex__data_pipe_lsu_wavefronts_mem_shared_op_st.sum",
+    ),
+    "memory.shared_load_excessive_wavefronts": (
+        "l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_ld.sum",
+    ),
+    "memory.shared_store_excessive_wavefronts": (
+        "l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_st.sum",
     ),
     "memory.shared_bank_conflicts": (
         "l1tex__data_bank_conflicts_pipe_lsu_mem_shared.sum",
@@ -121,9 +158,7 @@ _METRIC_ALIASES: dict[str, tuple[str, ...]] = {
         "sm__inst_executed.avg.per_cycle_active",
     ),
     "instructions.executed": ("smsp__inst_executed.sum", "sm__inst_executed.sum"),
-    "instructions.integer": (
-        "smsp__sass_thread_inst_executed_op_integer_pred_on.sum",
-    ),
+    "instructions.integer": ("smsp__sass_thread_inst_executed_op_integer_pred_on.sum",),
     "instructions.fp16": ("smsp__sass_thread_inst_executed_op_hfma_pred_on.sum",),
     "instructions.fp32": (
         "smsp__sass_thread_inst_executed_op_ffma_pred_on.sum",
@@ -142,9 +177,7 @@ _METRIC_ALIASES: dict[str, tuple[str, ...]] = {
     "roofline.memory_peak_pct": (
         "gpu__compute_memory_throughput.avg.pct_of_peak_sustained_elapsed",
     ),
-    "roofline.compute_peak_pct": (
-        "sm__throughput.avg.pct_of_peak_sustained_elapsed",
-    ),
+    "roofline.compute_peak_pct": ("sm__throughput.avg.pct_of_peak_sustained_elapsed",),
 }
 
 
@@ -251,9 +284,7 @@ def _collect_wide_units(rows: list[dict[str, str]]) -> dict[str, str]:
 
 
 def _select_wide_measurement_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
-    measurement_rows = [
-        row for row in rows if row.get("ID", "").strip().isdigit()
-    ]
+    measurement_rows = [row for row in rows if row.get("ID", "").strip().isdigit()]
     candidate_rows = [
         row
         for row in measurement_rows
@@ -465,6 +496,42 @@ def _derive_theoretical_occupancy(report: dict[str, Any]) -> None:
     )
 
 
+def _derive_memory_efficiency(report: dict[str, Any]) -> None:
+    memory = report.get("memory")
+    if not isinstance(memory, dict):
+        return
+
+    for access_kind in ("load", "store"):
+        requests = _numeric_metric_value(memory.get(f"global_{access_kind}_requests"))
+        sectors = _numeric_metric_value(memory.get(f"global_{access_kind}_sectors"))
+        if requests and sectors is not None:
+            memory[f"global_{access_kind}_sectors_per_request"] = round(
+                sectors / requests,
+                4,
+            )
+
+        shared_requests = _numeric_metric_value(
+            memory.get(f"shared_{access_kind}_requests")
+        )
+        wavefronts = _numeric_metric_value(
+            memory.get(f"shared_{access_kind}_wavefronts")
+        )
+        if shared_requests and wavefronts is not None:
+            memory[f"shared_{access_kind}_ideal_wavefronts"] = int(shared_requests)
+            memory[f"shared_{access_kind}_wavefronts_per_request"] = round(
+                wavefronts / shared_requests,
+                4,
+            )
+
+    for cache_level in ("l1", "l2"):
+        for direction in ("read", "write"):
+            sectors = _numeric_metric_value(
+                memory.get(f"{cache_level}_{direction}_sectors")
+            )
+            if sectors is not None:
+                memory[f"{cache_level}_bytes_{direction}"] = int(sectors * 32)
+
+
 def _summarize_ncu_output(output: str) -> dict[str, Any]:
     rows = _read_ncu_csv_rows(output)
     if not rows:
@@ -496,6 +563,7 @@ def _summarize_ncu_output(output: str) -> dict[str, Any]:
     _derive_kernel_dimensions(report)
     _derive_occupancy_limit(report)
     _derive_theoretical_occupancy(report)
+    _derive_memory_efficiency(report)
     return report
 
 
@@ -523,6 +591,7 @@ class NCUResult:
             "available": self.return_code is not None,
             **asdict(self),
         }
+
 
 def profile_ptx_with_ncu(
     kernel_name: str,
