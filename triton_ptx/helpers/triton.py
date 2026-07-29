@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import errno
 import inspect
 import shutil
-import time
-import uuid
 from pathlib import Path
 import os
 
@@ -88,10 +85,10 @@ def dump_kernel_ptx(kernel):
 def jit_fixed_parameters(fn=None, **triton_kwargs):
     """Wrap ``triton.jit`` while preserving non-``tl.constexpr`` parameters.
 
-    This decorator auto-populates ``do_not_specialize`` with every function
-    parameter that is not annotated as ``tl.constexpr``. That keeps regular
-    runtime arguments in the generated PTX signature while still allowing
-    compile-time constants to be specialized away.
+    This decorator prevents specialization of scalar runtime parameters while
+    preserving pointer specialization. Pointer specialization retains alignment
+    facts that enable vectorized memory operations and asynchronous copies;
+    pointers remain runtime PTX parameters.
 
     Args:
         fn: Optional function passed when the decorator is used without
@@ -110,7 +107,7 @@ def jit_fixed_parameters(fn=None, **triton_kwargs):
 
         for name, param in params.items():
             annotation = annotations.get(name, param.annotation)
-            if annotation is not tl.constexpr:
+            if annotation is not tl.constexpr and not name.endswith("_ptr"):
                 do_not_specialize_list.append(name)
 
         return triton.jit(
