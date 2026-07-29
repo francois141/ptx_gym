@@ -7,7 +7,7 @@ import triton.language as tl
 from triton_ptx.kernels.base import TritonPTXKernel
 
 
-class MatrixMultiplicationKernel(TritonPTXKernel):
+class MatrixMultiplicationFloat16(TritonPTXKernel):
     def __init__(self, *, block_m=128, block_n=128, block_k=32, num_warps=4, ptx=None):
         self.block_m = block_m
         self.block_n = block_n
@@ -44,30 +44,25 @@ class MatrixMultiplicationKernel(TritonPTXKernel):
         b_ptrs = b_ptr + offs_k[:, None] * stride_bk + offs_n[None, :]
 
         accumulator = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-        for k_start in range(0, tl.cdiv(k_dim, BLOCK_K)):
+        for _ in range(0, tl.cdiv(k_dim, BLOCK_K)):
             a = tl.load(a_ptrs)
             b = tl.load(b_ptrs)
-            accumulator = tl.dot(
-                a, b, acc=accumulator, out_dtype=tl.float32, input_precision="ieee"
-            )
+            accumulator = tl.dot(a, b, acc=accumulator, out_dtype=tl.float32)
             a_ptrs += BLOCK_K
             b_ptrs += BLOCK_K * stride_bk
 
-        c = accumulator.to(tl.float32)
+        c = accumulator.to(tl.float16)
         c_ptrs = c_ptr + offs_m[:, None] * stride_cm + offs_n[None, :]
         tl.store(c_ptrs, c)
 
     def get_random_input(self):
-        k = 1024
-        k = min(k, 512)
-        a = torch.randn((4096, k), device="cuda", dtype=torch.float32)
-        b = torch.randn((k, 4096), device="cuda", dtype=torch.float32)
-        assert k % 32 == 0, "k must be a multiple of 32"
-        return a, b
+        a = torch.randn((4096, 4096), device="cuda", dtype=torch.float16)
+        b = torch.randn((4096, 4096), device="cuda", dtype=torch.float16)
+        c = torch.empty((4096, 4096), device=a.device, dtype=a.dtype)
+        return a, b, c
 
     def forward_triton(self, inputs, ptx=False):
-        a, b = inputs
-        c = torch.empty((4096, 4096), device=a.device, dtype=a.dtype)
+        a, b, c = inputs
 
         def grid(meta):
             return (

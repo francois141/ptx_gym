@@ -5,35 +5,34 @@ import triton.language as tl
 from triton_ptx.kernels.base import TritonPTXKernel
 
 
-class ReduceSumKernel(TritonPTXKernel):
-    def __init__(self, *, block_size=1024, num_warps=4, ptx=None):
+class GELUKernel(TritonPTXKernel):
+    def __init__(self, block_size=1024, num_warps=4, ptx=None):
         self.block_size = block_size
         self.constexpr_values = {"BLOCK_SIZE": block_size}
         self.num_warps = num_warps
         self.init_compiled_kernels(ptx=ptx)
 
+        self.size = 4096
+
     @staticmethod
-    def kernel(
-        x_ptr,
-        output_ptr,
-        n_elements,
-        BLOCK_SIZE: tl.constexpr,
-    ):
+    def kernel(x_ptr, output_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
         pid = tl.program_id(axis=0)
         offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-        mask = offsets < n_elements
+        x = tl.load(x_ptr + offsets)
 
-        x = tl.load(x_ptr + offsets, mask=mask, other=0.0)
-        partial_sum = tl.sum(x, axis=0)
-        tl.atomic_add(output_ptr, partial_sum, sem="relaxed")
+        x32 = x.to(tl.float32)
+        inv_sqrt2 = 0.7071067811865476
+        output = 0.5 * x32 * (1.0 + tl.math.erf(x32 * inv_sqrt2))
+        tl.store(
+            output_ptr + offsets, output.to(output_ptr.dtype.element_ty)
+        )
 
     def get_random_input(self):
-        size = 10_000_000
-        return self._rand_1d(size)
+        return self._rand_1d(self.size)
 
-    def forward_triton(self, inputs, ptx=False):
-        n_elements = inputs.numel()
-        output = torch.zeros((), device=inputs.device, dtype=inputs.dtype)
+    def forward_triton(self, x, ptx=False):
+        n_elements = x.numel()
+        output = torch.empty_like(x)
         grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
         if not ptx:
@@ -44,7 +43,7 @@ class ReduceSumKernel(TritonPTXKernel):
             launch_kwargs = self.ptx_launch_kwargs()
 
         kernel = launch_kernel[grid](
-            inputs,
+            x,
             output,
             n_elements,
             BLOCK_SIZE=self.block_size,
@@ -53,4 +52,4 @@ class ReduceSumKernel(TritonPTXKernel):
         return output, kernel
 
     def forward_torch(self, inputs):
-        return torch.sum(inputs)
+        return torch.nn.functional.gelu(inputs)

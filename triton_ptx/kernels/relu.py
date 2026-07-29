@@ -5,30 +5,28 @@ import triton.language as tl
 from triton_ptx.kernels.base import TritonPTXKernel
 
 
-class LeakyReLUKernel(TritonPTXKernel):
-    def __init__(self, negative_slope=0.01, block_size=1024, num_warps=4, ptx=None):
-        self.negative_slope = negative_slope
+class ReLUKernel(TritonPTXKernel):
+    def __init__(self, block_size=1024, num_warps=4, ptx=None):
         self.block_size = block_size
         self.constexpr_values = {"BLOCK_SIZE": block_size}
         self.num_warps = num_warps
         self.init_compiled_kernels(ptx=ptx)
 
+        self.size = 4096
+
     @staticmethod
-    def kernel(x_ptr, output_ptr, n_elements, negative_slope, BLOCK_SIZE: tl.constexpr):
+    def kernel(x_ptr, output_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
         pid = tl.program_id(axis=0)
         offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-        mask = offsets < n_elements
-        x = tl.load(x_ptr + offsets, mask=mask)
-        output = tl.where(x >= 0, x, x * negative_slope)
-        tl.store(output_ptr + offsets, output, mask=mask)
+        x = tl.load(x_ptr + offsets)
+        tl.store(output_ptr + offsets, tl.maximum(x, 0.0))
 
     def get_random_input(self):
-        size = 10_000_000
-        return self._rand_1d(size)
+        return self._rand_1d(self.size)
 
-    def forward_triton(self, inputs, ptx=False):
-        n_elements = inputs.numel()
-        output = torch.empty_like(inputs)
+    def forward_triton(self, x, ptx=False):
+        output = torch.empty_like(x)
+        n_elements = x.numel()
         grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
         if not ptx:
@@ -39,16 +37,13 @@ class LeakyReLUKernel(TritonPTXKernel):
             launch_kwargs = self.ptx_launch_kwargs()
 
         kernel = launch_kernel[grid](
-            inputs,
+            x,
             output,
             n_elements,
-            self.negative_slope,
             BLOCK_SIZE=self.block_size,
             **launch_kwargs,
         )
         return output, kernel
 
-    def forward_torch(self, inputs):
-        return torch.nn.functional.leaky_relu(
-            inputs, negative_slope=self.negative_slope
-        )
+    def forward_torch(self, x):
+        return torch.relu(x)
