@@ -18,8 +18,8 @@ class OutputVerifier(BaseVerifier):
         sizes=DEFAULT_VERIFICATION_SIZES,  # TODO: In the future make it work with irregular values
         iters_per_size=250,
         seed=42,
-        rtol=1e-2,
-        atol=1e-2,
+        rtol=1e-3,
+        atol=1e-3,
         max_print=32,
         max_video_memory_fraction=MAX_VIDEO_MEMORY_FRACTION,
     ):
