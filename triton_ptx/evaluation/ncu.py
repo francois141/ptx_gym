@@ -532,10 +532,17 @@ def _derive_memory_efficiency(report: dict[str, Any]) -> None:
                 memory[f"{cache_level}_bytes_{direction}"] = int(sectors * 32)
 
 
-def _summarize_ncu_output(output: str) -> dict[str, Any]:
+def _all_ncu_metrics(metrics: dict[str, dict[str, str]]) -> dict[str, Any]:
+    return {
+        metric_name: _compact_metric(row)
+        for metric_name, row in sorted(metrics.items())
+    }
+
+
+def _parse_ncu_output(output: str) -> tuple[dict[str, Any], dict[str, Any]]:
     rows = _read_ncu_csv_rows(output)
     if not rows:
-        return {}
+        return {}, {}
 
     metrics = _collect_metrics(rows)
     report: dict[str, Any] = {}
@@ -564,7 +571,7 @@ def _summarize_ncu_output(output: str) -> dict[str, Any]:
     _derive_occupancy_limit(report)
     _derive_theoretical_occupancy(report)
     _derive_memory_efficiency(report)
-    return report
+    return report, _all_ncu_metrics(metrics)
 
 
 @dataclass(frozen=True)
@@ -573,11 +580,13 @@ class NCUResult:
 
     Attributes:
         summary: Compact optimization-oriented Nsight Compute metrics.
+        metrics: Every named metric returned by Nsight Compute.
         error: Nsight Compute diagnostics written to standard error.
         return_code: Process exit status, or ``None`` when profiling did not run.
     """
 
     summary: dict[str, Any]
+    metrics: dict[str, Any]
     error: str
     return_code: int | None
 
@@ -621,6 +630,7 @@ def profile_ptx_with_ncu(
     if ncu_path is None:
         return NCUResult(
             summary={},
+            metrics={},
             error=f"ncu not found; set {NCU_ENV_VAR} to the executable path.",
             return_code=None,
         )
@@ -659,24 +669,29 @@ def profile_ptx_with_ncu(
             )
         except subprocess.TimeoutExpired as exc:
             timeout_output = exc.stdout
+            summary, metrics = _parse_ncu_output(
+                timeout_output.decode(errors="replace")
+                if isinstance(timeout_output, bytes)
+                else timeout_output or ""
+            )
             return NCUResult(
-                summary=_summarize_ncu_output(
-                    timeout_output.decode(errors="replace")
-                    if isinstance(timeout_output, bytes)
-                    else timeout_output or ""
-                ),
+                summary=summary,
+                metrics=metrics,
                 error=f"Nsight Compute timed out after {timeout_seconds} seconds.",
                 return_code=None,
             )
         except OSError as exc:
             return NCUResult(
                 summary={},
+                metrics={},
                 error=f"Failed to start Nsight Compute: {exc}",
                 return_code=None,
             )
 
+        summary, metrics = _parse_ncu_output(completed.stdout)
         return NCUResult(
-            summary=_summarize_ncu_output(completed.stdout),
+            summary=summary,
+            metrics=metrics,
             error=completed.stderr,
             return_code=completed.returncode,
         )
