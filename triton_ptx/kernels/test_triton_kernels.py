@@ -16,7 +16,7 @@ pytestmark = pytest.mark.skipif(
 @pytest.mark.parametrize("kernel_cls", kernel_list, ids=lambda cls: cls.__name__)
 def test_kernel_matches_torch(kernel_cls: type) -> None:
     kernel = kernel_cls()
-    verifier = OutputVerifier(iters_per_size=50, seed=42)
+    verifier = OutputVerifier(iterations=50, seed=42)
 
     assert verifier.verify_triton_vs_torch(kernel), (
         f"{kernel_cls.__name__} failed against PyTorch: {verifier.last_report}"

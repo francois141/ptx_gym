@@ -6,7 +6,6 @@ from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class MaskedCumsumKernel(TritonPTXKernel):
-
     def __init__(self, dim=0, block_size=1024, num_warps=4, ptx=None):
         self.dim = dim
         self.block_size = block_size
@@ -29,9 +28,12 @@ class MaskedCumsumKernel(TritonPTXKernel):
             tl.store(out_ptr + offsets, output, mask=valid)
             carry += tl.sum(values, axis=0)
 
-    def get_random_input(self, size=10_000_000):
+    def get_random_input(self):
+        size = 10_000_000
         x = self._rand_1d(size)
-        mask = torch.randint(0, 2, x.shape, device="cuda", dtype=torch.int32).to(x.dtype)
+        mask = torch.randint(0, 2, x.shape, device="cuda", dtype=torch.int32).to(
+            x.dtype
+        )
         return x, mask
 
     def forward_triton(self, inputs, ptx=False):

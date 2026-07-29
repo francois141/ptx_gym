@@ -72,8 +72,12 @@ class Conv2dMishMishKernel(TritonPTXKernel):
                 for kw in range(0, KERNEL_SIZE):
                     in_h = out_h_idx + kh
                     in_w = out_w_idx + kw
-                    x_idx = ((batch_idx * IN_CHANNELS + ic) * height + in_h) * width + in_w
-                    w_idx = ((out_channel * IN_CHANNELS + ic) * KERNEL_SIZE + kh) * KERNEL_SIZE + kw
+                    x_idx = (
+                        (batch_idx * IN_CHANNELS + ic) * height + in_h
+                    ) * width + in_w
+                    w_idx = (
+                        (out_channel * IN_CHANNELS + ic) * KERNEL_SIZE + kh
+                    ) * KERNEL_SIZE + kw
                     acc += tl.load(x_ptr + x_idx, mask=mask, other=0.0) * tl.load(
                         weight_ptr + w_idx, mask=mask, other=0.0
                     )
@@ -97,7 +101,11 @@ class Conv2dMishMishKernel(TritonPTXKernel):
         x = inputs
         out_h = x.shape[2] - self.kernel_size + 1
         out_w = x.shape[3] - self.kernel_size + 1
-        output = torch.empty((x.shape[0], self.out_channels, out_h, out_w), device=x.device, dtype=x.dtype)
+        output = torch.empty(
+            (x.shape[0], self.out_channels, out_h, out_w),
+            device=x.device,
+            dtype=x.dtype,
+        )
         total = output.numel()
         grid = lambda meta: (triton.cdiv(total, meta["BLOCK_SIZE"]),)
         if not ptx:

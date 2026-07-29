@@ -46,8 +46,22 @@ class Conv3dReLULeakyReLUGELUSigmoidBiasKernel(TritonPTXKernel):
 
     @staticmethod
     def kernel(
-        x_ptr, weight_ptr, conv_bias_ptr, bias_ptr, output_ptr, total, in_d, in_h, in_w, out_d, out_h, out_w,
-        IN_CHANNELS: tl.constexpr, OUT_CHANNELS: tl.constexpr, KERNEL_SIZE: tl.constexpr, BLOCK_SIZE: tl.constexpr,
+        x_ptr,
+        weight_ptr,
+        conv_bias_ptr,
+        bias_ptr,
+        output_ptr,
+        total,
+        in_d,
+        in_h,
+        in_w,
+        out_d,
+        out_h,
+        out_w,
+        IN_CHANNELS: tl.constexpr,
+        OUT_CHANNELS: tl.constexpr,
+        KERNEL_SIZE: tl.constexpr,
+        BLOCK_SIZE: tl.constexpr,
     ):
         offsets = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
         mask = offsets < total
@@ -64,9 +78,17 @@ class Conv3dReLULeakyReLUGELUSigmoidBiasKernel(TritonPTXKernel):
                         z = out_z + kz
                         y = out_y + ky
                         x = out_x + kx
-                        x_idx = ((((batch_idx * IN_CHANNELS + in_c) * in_d + z) * in_h + y) * in_w + x)
-                        w_idx = ((((out_c * IN_CHANNELS + in_c) * KERNEL_SIZE + kz) * KERNEL_SIZE + ky) * KERNEL_SIZE + kx)
-                        acc += tl.load(x_ptr + x_idx, mask=mask, other=0.0) * tl.load(weight_ptr + w_idx, mask=mask, other=0.0)
+                        x_idx = (
+                            ((batch_idx * IN_CHANNELS + in_c) * in_d + z) * in_h + y
+                        ) * in_w + x
+                        w_idx = (
+                            ((out_c * IN_CHANNELS + in_c) * KERNEL_SIZE + kz)
+                            * KERNEL_SIZE
+                            + ky
+                        ) * KERNEL_SIZE + kx
+                        acc += tl.load(x_ptr + x_idx, mask=mask, other=0.0) * tl.load(
+                            weight_ptr + w_idx, mask=mask, other=0.0
+                        )
         acc += tl.load(conv_bias_ptr + out_c, mask=mask, other=0.0)
         acc = tl.maximum(acc, 0.0)
         acc = tl.where(acc >= 0, acc, acc * 0.01)
@@ -77,14 +99,22 @@ class Conv3dReLULeakyReLUGELUSigmoidBiasKernel(TritonPTXKernel):
         tl.store(output_ptr + offsets, acc, mask=mask)
 
     def get_random_input(self):
-        return torch.rand((self.batch, self.in_channels, self.depth, self.height, self.width), device="cuda", dtype=torch.float32)
+        return torch.rand(
+            (self.batch, self.in_channels, self.depth, self.height, self.width),
+            device="cuda",
+            dtype=torch.float32,
+        )
 
     def forward_triton(self, inputs, ptx: bool = False):
         x = inputs
         out_d = x.shape[2] - self.kernel_size + 1
         out_h = x.shape[3] - self.kernel_size + 1
         out_w = x.shape[4] - self.kernel_size + 1
-        output = torch.empty((x.shape[0], self.out_channels, out_d, out_h, out_w), device=x.device, dtype=x.dtype)
+        output = torch.empty(
+            (x.shape[0], self.out_channels, out_d, out_h, out_w),
+            device=x.device,
+            dtype=x.dtype,
+        )
         total = output.numel()
         grid = lambda meta: (triton.cdiv(total, meta["BLOCK_SIZE"]),)
         if not ptx:

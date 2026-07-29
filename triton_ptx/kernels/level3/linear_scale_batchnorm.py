@@ -44,8 +44,22 @@ class LinearScaleBatchNormKernel(TritonPTXKernel):
 
     @staticmethod
     def kernel(
-        x_ptr, weight_ptr, bias_ptr, scale_ptr, bn_weight_ptr, bn_bias_ptr, output_ptr, batch, stride_xm, stride_wn, stride_om, eps,
-        IN_FEATURES: tl.constexpr, OUT_FEATURES: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+        x_ptr,
+        weight_ptr,
+        bias_ptr,
+        scale_ptr,
+        bn_weight_ptr,
+        bn_bias_ptr,
+        output_ptr,
+        batch,
+        stride_xm,
+        stride_wn,
+        stride_om,
+        eps,
+        IN_FEATURES: tl.constexpr,
+        OUT_FEATURES: tl.constexpr,
+        BLOCK_N: tl.constexpr,
+        BLOCK_K: tl.constexpr,
     ):
         pid_n = tl.program_id(0)
         offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
@@ -59,7 +73,12 @@ class LinearScaleBatchNormKernel(TritonPTXKernel):
             for k_start in range(0, tl.cdiv(IN_FEATURES, BLOCK_K)):
                 k_offsets = k_start * BLOCK_K + offs_k
                 x = tl.load(x_ptrs, mask=k_offsets < IN_FEATURES, other=0.0)
-                w = tl.load(w_ptrs, mask=(offs_n[None, :] < OUT_FEATURES) & (k_offsets[:, None] < IN_FEATURES), other=0.0)
+                w = tl.load(
+                    w_ptrs,
+                    mask=(offs_n[None, :] < OUT_FEATURES)
+                    & (k_offsets[:, None] < IN_FEATURES),
+                    other=0.0,
+                )
                 acc += tl.sum(w * x[:, None], axis=0)
                 x_ptrs += BLOCK_K
                 w_ptrs += BLOCK_K
@@ -80,7 +99,12 @@ class LinearScaleBatchNormKernel(TritonPTXKernel):
             for k_start in range(0, tl.cdiv(IN_FEATURES, BLOCK_K)):
                 k_offsets = k_start * BLOCK_K + offs_k
                 x = tl.load(x_ptrs, mask=k_offsets < IN_FEATURES, other=0.0)
-                w = tl.load(w_ptrs, mask=(offs_n[None, :] < OUT_FEATURES) & (k_offsets[:, None] < IN_FEATURES), other=0.0)
+                w = tl.load(
+                    w_ptrs,
+                    mask=(offs_n[None, :] < OUT_FEATURES)
+                    & (k_offsets[:, None] < IN_FEATURES),
+                    other=0.0,
+                )
                 acc += tl.sum(w * x[:, None], axis=0)
                 x_ptrs += BLOCK_K
                 w_ptrs += BLOCK_K
@@ -93,11 +117,15 @@ class LinearScaleBatchNormKernel(TritonPTXKernel):
             tl.store(out_ptrs, out, mask=offs_n < OUT_FEATURES)
 
     def get_random_input(self):
-        return torch.rand((self.batch, self.in_features), device="cuda", dtype=torch.float32)
+        return torch.rand(
+            (self.batch, self.in_features), device="cuda", dtype=torch.float32
+        )
 
     def forward_triton(self, inputs, ptx: bool = False):
         x = inputs
-        output = torch.empty((x.shape[0], self.out_features), device=x.device, dtype=x.dtype)
+        output = torch.empty(
+            (x.shape[0], self.out_features), device=x.device, dtype=x.dtype
+        )
         grid = (triton.cdiv(self.out_features, self.block_n),)
         if not ptx:
             launch_kernel = self.compiled_kernel

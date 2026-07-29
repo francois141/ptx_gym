@@ -4,8 +4,8 @@ import triton.language as tl
 
 from triton_ptx.kernels.base import TritonPTXKernel
 
-class ArgmaxKernel(TritonPTXKernel):
 
+class ArgmaxKernel(TritonPTXKernel):
     def __init__(self, block_size=1024, num_warps=4, ptx=None):
         self.block_size = block_size
         self.constexpr_values = {"BLOCK_SIZE": block_size}
@@ -39,12 +39,15 @@ class ArgmaxKernel(TritonPTXKernel):
 
         tl.atomic_max(out_ptr, packed, sem="relaxed")
 
-    def get_random_input(self, size=10_000_000):
+    def get_random_input(self):
+        size = 10_000_000
         return self._rand_1d(size)
 
     def forward_triton(self, inputs, ptx=False):
         n_elements = inputs.numel()
-        out = torch.full((1,), torch.iinfo(torch.int64).min, device=inputs.device, dtype=torch.int64)
+        out = torch.full(
+            (1,), torch.iinfo(torch.int64).min, device=inputs.device, dtype=torch.int64
+        )
         grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
         if not ptx:

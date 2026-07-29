@@ -4,8 +4,8 @@ import triton.language as tl
 
 from triton_ptx.kernels.base import TritonPTXKernel
 
-class MSELossKernel(TritonPTXKernel):
 
+class MSELossKernel(TritonPTXKernel):
     def __init__(self, block_size=1024, num_warps=4, ptx=None):
         self.block_size = block_size
         self.constexpr_values = {"BLOCK_SIZE": block_size}
@@ -13,7 +13,9 @@ class MSELossKernel(TritonPTXKernel):
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
-    def kernel(pred_ptr, target_ptr, output_ptr, loss_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
+    def kernel(
+        pred_ptr, target_ptr, output_ptr, loss_ptr, n_elements, BLOCK_SIZE: tl.constexpr
+    ):
         pid = tl.program_id(axis=0)
         offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
         mask = offsets < n_elements
@@ -25,7 +27,8 @@ class MSELossKernel(TritonPTXKernel):
         partial_sum = tl.sum(sq, axis=0)
         tl.atomic_add(loss_ptr, partial_sum, sem="relaxed")
 
-    def get_random_input(self, size=10_000_000):
+    def get_random_input(self):
+        size = 10_000_000
         return self._rand_1d(size), self._rand_1d(size)
 
     def forward_triton(self, inputs, ptx=False):

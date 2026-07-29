@@ -45,8 +45,21 @@ class LinearMulLeakyReLUKernel(TritonPTXKernel):
 
     @staticmethod
     def kernel(
-        x_ptr, weight_ptr, bias_ptr, output_ptr, batch, multiplier, negative_slope, stride_xm, stride_wn, stride_om,
-        IN_FEATURES: tl.constexpr, OUT_FEATURES: tl.constexpr, BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+        x_ptr,
+        weight_ptr,
+        bias_ptr,
+        output_ptr,
+        batch,
+        multiplier,
+        negative_slope,
+        stride_xm,
+        stride_wn,
+        stride_om,
+        IN_FEATURES: tl.constexpr,
+        OUT_FEATURES: tl.constexpr,
+        BLOCK_M: tl.constexpr,
+        BLOCK_N: tl.constexpr,
+        BLOCK_K: tl.constexpr,
     ):
         pid_m = tl.program_id(0)
         pid_n = tl.program_id(1)
@@ -58,8 +71,17 @@ class LinearMulLeakyReLUKernel(TritonPTXKernel):
         acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
         for k_start in range(0, tl.cdiv(IN_FEATURES, BLOCK_K)):
             k_offsets = k_start * BLOCK_K + offs_k
-            x = tl.load(x_ptrs, mask=(offs_m[:, None] < batch) & (k_offsets[None, :] < IN_FEATURES), other=0.0)
-            w = tl.load(w_ptrs, mask=(offs_n[None, :] < OUT_FEATURES) & (k_offsets[:, None] < IN_FEATURES), other=0.0)
+            x = tl.load(
+                x_ptrs,
+                mask=(offs_m[:, None] < batch) & (k_offsets[None, :] < IN_FEATURES),
+                other=0.0,
+            )
+            w = tl.load(
+                w_ptrs,
+                mask=(offs_n[None, :] < OUT_FEATURES)
+                & (k_offsets[:, None] < IN_FEATURES),
+                other=0.0,
+            )
             acc = tl.dot(x, w, acc=acc, out_dtype=tl.float32, input_precision="ieee")
             x_ptrs += BLOCK_K
             w_ptrs += BLOCK_K
@@ -67,15 +89,26 @@ class LinearMulLeakyReLUKernel(TritonPTXKernel):
         acc = (acc + bias[None, :]) * multiplier
         acc = tl.where(acc >= 0, acc, acc * negative_slope)
         out_ptrs = output_ptr + offs_m[:, None] * stride_om + offs_n[None, :]
-        tl.store(out_ptrs, acc, mask=(offs_m[:, None] < batch) & (offs_n[None, :] < OUT_FEATURES))
+        tl.store(
+            out_ptrs,
+            acc,
+            mask=(offs_m[:, None] < batch) & (offs_n[None, :] < OUT_FEATURES),
+        )
 
     def get_random_input(self):
-        return torch.rand((self.batch, self.in_features), device="cuda", dtype=torch.float32)
+        return torch.rand(
+            (self.batch, self.in_features), device="cuda", dtype=torch.float32
+        )
 
     def forward_triton(self, inputs, ptx: bool = False):
         x = inputs
-        output = torch.empty((x.shape[0], self.out_features), device=x.device, dtype=x.dtype)
-        grid = lambda meta: (triton.cdiv(x.shape[0], meta["BLOCK_M"]), triton.cdiv(self.out_features, meta["BLOCK_N"]))
+        output = torch.empty(
+            (x.shape[0], self.out_features), device=x.device, dtype=x.dtype
+        )
+        grid = lambda meta: (
+            triton.cdiv(x.shape[0], meta["BLOCK_M"]),
+            triton.cdiv(self.out_features, meta["BLOCK_N"]),
+        )
         if not ptx:
             launch_kernel = self.compiled_kernel
             launch_kwargs = dict(num_warps=self.num_warps)

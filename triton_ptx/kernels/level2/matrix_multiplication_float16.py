@@ -47,9 +47,7 @@ class MatrixMultiplicationFloat16(TritonPTXKernel):
         for k_start in range(0, tl.cdiv(k_dim, BLOCK_K)):
             a = tl.load(a_ptrs)
             b = tl.load(b_ptrs)
-            accumulator = tl.dot(
-                a, b, acc=accumulator, out_dtype=tl.float32
-            )
+            accumulator = tl.dot(a, b, acc=accumulator, out_dtype=tl.float32)
             a_ptrs += BLOCK_K
             b_ptrs += BLOCK_K * stride_bk
 
@@ -57,7 +55,8 @@ class MatrixMultiplicationFloat16(TritonPTXKernel):
         c_ptrs = c_ptr + offs_m[:, None] * stride_cm + offs_n[None, :]
         tl.store(c_ptrs, c)
 
-    def get_random_input(self, k=1024):
+    def get_random_input(self):
+        k = 1024
         k = min(k, 512)
         assert k % 32 == 0, "k must be a multiple of 32"
         a = torch.randn((4096, k), device="cuda", dtype=torch.float16)

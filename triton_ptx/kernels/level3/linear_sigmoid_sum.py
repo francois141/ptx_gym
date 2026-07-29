@@ -74,10 +74,13 @@ class LinearSigmoidSumKernel(TritonPTXKernel):
                 )
                 w = tl.load(
                     weight_ptrs,
-                    mask=(offs_n[None, :] < HIDDEN_SIZE) & (k_offsets[:, None] < INPUT_SIZE),
+                    mask=(offs_n[None, :] < HIDDEN_SIZE)
+                    & (k_offsets[:, None] < INPUT_SIZE),
                     other=0.0,
                 )
-                acc = tl.dot(x, w, acc=acc, out_dtype=tl.float32, input_precision="ieee")
+                acc = tl.dot(
+                    x, w, acc=acc, out_dtype=tl.float32, input_precision="ieee"
+                )
                 x_ptrs += BLOCK_K
                 weight_ptrs += BLOCK_K
 
@@ -89,7 +92,9 @@ class LinearSigmoidSumKernel(TritonPTXKernel):
         tl.store(output_ptr + offs_m, sum_acc, mask=offs_m < batch)
 
     def get_random_input(self):
-        return torch.rand((self.batch, self.input_size), device="cuda", dtype=torch.float32)
+        return torch.rand(
+            (self.batch, self.input_size), device="cuda", dtype=torch.float32
+        )
 
     def forward_triton(self, inputs, ptx: bool = False):
         x = inputs

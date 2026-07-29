@@ -8,7 +8,6 @@ from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class MatrixAdditionKernel(TritonPTXKernel):
-
     def __init__(self, *, block_m=128, block_n=128, num_warps=4, ptx=None):
         self.block_m = block_m
         self.block_n = block_n
@@ -42,7 +41,8 @@ class MatrixAdditionKernel(TritonPTXKernel):
         y = tl.load(y_ptrs, mask=mask, other=0.0)
         tl.store(out_ptrs, x + y, mask=mask)
 
-    def get_random_input(self, size=1024):
+    def get_random_input(self):
+        size = 1024
         size = min(size, 1024)
         x = torch.randn((size, size), device="cuda", dtype=torch.float32)
         y = torch.randn((size, size), device="cuda", dtype=torch.float32)

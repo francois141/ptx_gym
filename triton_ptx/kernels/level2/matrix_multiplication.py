@@ -57,7 +57,8 @@ class MatrixMultiplicationKernel(TritonPTXKernel):
         c_ptrs = c_ptr + offs_m[:, None] * stride_cm + offs_n[None, :]
         tl.store(c_ptrs, c)
 
-    def get_random_input(self, k=1024):
+    def get_random_input(self):
+        k = 1024
         k = min(k, 512)
         a = torch.randn((4096, k), device="cuda", dtype=torch.float32)
         b = torch.randn((k, 4096), device="cuda", dtype=torch.float32)

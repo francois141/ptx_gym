@@ -66,17 +66,19 @@ class CausalDotProductAttentionKernel(TritonPTXKernel):
         scores -= tl.max(scores, axis=0)
         weights = tl.exp(scores)
         weights /= tl.sum(weights, axis=0)
-        values = tl.load(v_base + seq_offsets[:, None] * stride_vs + dim_offsets[None, :])
+        values = tl.load(
+            v_base + seq_offsets[:, None] * stride_vs + dim_offsets[None, :]
+        )
         output = tl.sum(weights[:, None] * values, axis=0)
-        output_base = output_ptr + batch * stride_ob + head * stride_oh + row * stride_os
+        output_base = (
+            output_ptr + batch * stride_ob + head * stride_oh + row * stride_os
+        )
         tl.store(output_base + dim_offsets, output)
 
-    def get_random_input(
-        self, seq_len: int | None = None, head_dim: int | None = None
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def get_random_input(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Create random query, key, and value tensors."""
-        seq_len = self.seq_len if seq_len is None else min(seq_len, self.seq_len)
-        head_dim = self.head_dim if head_dim is None else min(head_dim, self.head_dim)
+        seq_len = self.seq_len
+        head_dim = self.head_dim
         shape = (self.batch_size, self.num_heads, seq_len, head_dim)
         return (
             torch.randn(shape, device="cuda", dtype=torch.float32),
@@ -91,7 +93,9 @@ class CausalDotProductAttentionKernel(TritonPTXKernel):
         q, k, v = inputs
         output = torch.empty_like(q)
         launch_kernel = self.compiled_kernel_ptx if ptx else self.compiled_kernel
-        launch_kwargs = self.ptx_launch_kwargs() if ptx else {"num_warps": self.num_warps}
+        launch_kwargs = (
+            self.ptx_launch_kwargs() if ptx else {"num_warps": self.num_warps}
+        )
         batch_size, num_heads, seq_len, head_dim = q.shape
         launched_kernel = launch_kernel[(seq_len, num_heads, batch_size)](
             q,
@@ -116,7 +120,9 @@ class CausalDotProductAttentionKernel(TritonPTXKernel):
         )
         return output, launched_kernel
 
-    def forward_torch(self, inputs: tuple[torch.Tensor, torch.Tensor, torch.Tensor]) -> torch.Tensor:
+    def forward_torch(
+        self, inputs: tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+    ) -> torch.Tensor:
         """Evaluate causal attention with PyTorch."""
         q, k, v = inputs
         return F.scaled_dot_product_attention(q, k, v, dropout_p=0.0, is_causal=True)

@@ -6,7 +6,6 @@ from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class CrossEntropyLossKernel(TritonPTXKernel):
-
     def __init__(self, block_size=1024, num_warps=4, ptx=None):
         self.block_size = block_size
         self.constexpr_values = {"BLOCK_SIZE": block_size}
@@ -14,7 +13,9 @@ class CrossEntropyLossKernel(TritonPTXKernel):
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
-    def kernel(logits_ptr, targets_ptr, accum_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
+    def kernel(
+        logits_ptr, targets_ptr, accum_ptr, n_elements, BLOCK_SIZE: tl.constexpr
+    ):
         if tl.program_id(0) != 0:
             return
         logits_max = -float("inf")
@@ -36,9 +37,12 @@ class CrossEntropyLossKernel(TritonPTXKernel):
         target_logit = tl.load(logits_ptr + target_idx)
         tl.store(accum_ptr, (logits_max + lse) - target_logit)
 
-    def get_random_input(self, size=10_000_000):
+    def get_random_input(self):
+        size = 10_000_000
         logits = self._rand_1d(size)
-        targets = torch.randint(0, logits.numel(), (1,), device="cuda", dtype=torch.int64)
+        targets = torch.randint(
+            0, logits.numel(), (1,), device="cuda", dtype=torch.int64
+        )
         return logits, targets
 
     def forward_triton(self, inputs, ptx=False):

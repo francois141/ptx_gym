@@ -48,16 +48,35 @@ class ConvTranspose2dSubTanhKernel(TritonPTXKernel):
             "BLOCK_SIZE": block_size,
         }
         self.conv_transpose = nn.ConvTranspose2d(
-            in_channels, out_channels, kernel_size, stride=stride, padding=padding, output_padding=output_padding
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride=stride,
+            padding=padding,
+            output_padding=output_padding,
         ).cuda()
         self.bias = nn.Parameter(torch.randn((out_channels, 1, 1), device="cuda"))
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
     def kernel(
-        x_ptr, weight_ptr, conv_bias_ptr, bias_ptr, output_ptr, total, in_h, in_w, out_h, out_w,
-        IN_CHANNELS: tl.constexpr, OUT_CHANNELS: tl.constexpr, KERNEL_SIZE: tl.constexpr,
-        STRIDE: tl.constexpr, PADDING: tl.constexpr, OUTPUT_PADDING: tl.constexpr, BLOCK_SIZE: tl.constexpr,
+        x_ptr,
+        weight_ptr,
+        conv_bias_ptr,
+        bias_ptr,
+        output_ptr,
+        total,
+        in_h,
+        in_w,
+        out_h,
+        out_w,
+        IN_CHANNELS: tl.constexpr,
+        OUT_CHANNELS: tl.constexpr,
+        KERNEL_SIZE: tl.constexpr,
+        STRIDE: tl.constexpr,
+        PADDING: tl.constexpr,
+        OUTPUT_PADDING: tl.constexpr,
+        BLOCK_SIZE: tl.constexpr,
     ):
         offsets = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
         mask = offsets < total
@@ -77,23 +96,55 @@ class ConvTranspose2dSubTanhKernel(TritonPTXKernel):
                     div_w = numer_w // STRIDE
                     exact_h = div_h * STRIDE == numer_h
                     exact_w = div_w * STRIDE == numer_w
-                    valid = mask & valid_h & valid_w & exact_h & exact_w & (div_h < in_h) & (div_w < in_w)
-                    x_idx = ((batch_idx * IN_CHANNELS + in_c) * in_h + div_h) * in_w + div_w
-                    w_idx = ((in_c * OUT_CHANNELS + out_c) * KERNEL_SIZE + kh) * KERNEL_SIZE + kw
-                    acc += tl.load(x_ptr + x_idx, mask=valid, other=0.0) * tl.load(weight_ptr + w_idx, mask=mask, other=0.0)
+                    valid = (
+                        mask
+                        & valid_h
+                        & valid_w
+                        & exact_h
+                        & exact_w
+                        & (div_h < in_h)
+                        & (div_w < in_w)
+                    )
+                    x_idx = (
+                        (batch_idx * IN_CHANNELS + in_c) * in_h + div_h
+                    ) * in_w + div_w
+                    w_idx = (
+                        (in_c * OUT_CHANNELS + out_c) * KERNEL_SIZE + kh
+                    ) * KERNEL_SIZE + kw
+                    acc += tl.load(x_ptr + x_idx, mask=valid, other=0.0) * tl.load(
+                        weight_ptr + w_idx, mask=mask, other=0.0
+                    )
         acc += tl.load(conv_bias_ptr + out_c, mask=mask, other=0.0)
         acc -= tl.load(bias_ptr + out_c, mask=mask, other=0.0)
         acc = libdevice.tanh(acc)
         tl.store(output_ptr + offsets, acc, mask=mask)
 
     def get_random_input(self):
-        return torch.rand((self.batch, self.in_channels, self.height, self.width), device="cuda", dtype=torch.float32)
+        return torch.rand(
+            (self.batch, self.in_channels, self.height, self.width),
+            device="cuda",
+            dtype=torch.float32,
+        )
 
     def forward_triton(self, inputs, ptx: bool = False):
         x = inputs
-        out_h = (x.shape[2] - 1) * self.stride - 2 * self.padding + self.kernel_size + self.output_padding
-        out_w = (x.shape[3] - 1) * self.stride - 2 * self.padding + self.kernel_size + self.output_padding
-        output = torch.empty((x.shape[0], self.out_channels, out_h, out_w), device=x.device, dtype=x.dtype)
+        out_h = (
+            (x.shape[2] - 1) * self.stride
+            - 2 * self.padding
+            + self.kernel_size
+            + self.output_padding
+        )
+        out_w = (
+            (x.shape[3] - 1) * self.stride
+            - 2 * self.padding
+            + self.kernel_size
+            + self.output_padding
+        )
+        output = torch.empty(
+            (x.shape[0], self.out_channels, out_h, out_w),
+            device=x.device,
+            dtype=x.dtype,
+        )
         total = output.numel()
         grid = lambda meta: (triton.cdiv(total, meta["BLOCK_SIZE"]),)
         if not ptx:
@@ -127,8 +178,12 @@ class ConvTranspose2dSubTanhKernel(TritonPTXKernel):
 
     def forward_torch(self, inputs):
         x = F.conv_transpose2d(
-            inputs, self.conv_transpose.weight, self.conv_transpose.bias,
-            stride=self.stride, padding=self.padding, output_padding=self.output_padding,
+            inputs,
+            self.conv_transpose.weight,
+            self.conv_transpose.bias,
+            stride=self.stride,
+            padding=self.padding,
+            output_padding=self.output_padding,
         )
         x = x - self.bias
         return torch.tanh(x)

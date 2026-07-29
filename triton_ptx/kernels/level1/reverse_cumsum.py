@@ -6,7 +6,6 @@ from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class ReverseCumsumKernel(TritonPTXKernel):
-
     def __init__(self, dim=0, block_size=1024, num_warps=4, ptx=None):
         self.dim = dim
         self.block_size = block_size
@@ -28,12 +27,15 @@ class ReverseCumsumKernel(TritonPTXKernel):
             tl.store(out_ptr + reverse_offsets, output, mask=valid)
             carry += tl.sum(inputs, axis=0)
 
-    def get_random_input(self, size=10_000_000):
+    def get_random_input(self):
+        size = 10_000_000
         return self._rand_1d(size)
 
     def forward_triton(self, inputs, ptx=False):
         if self.dim not in (0, -1):
-            return torch.cumsum(inputs.flip(self.dim), dim=self.dim).flip(self.dim), None
+            return torch.cumsum(inputs.flip(self.dim), dim=self.dim).flip(
+                self.dim
+            ), None
         n_elements = inputs.numel()
         out = torch.empty_like(inputs)
         grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)

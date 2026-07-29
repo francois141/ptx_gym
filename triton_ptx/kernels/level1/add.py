@@ -1,12 +1,11 @@
-
 import torch
 import triton
 import triton.language as tl
 
 from triton_ptx.kernels.base import TritonPTXKernel
 
-class AddKernel(TritonPTXKernel):
 
+class AddKernel(TritonPTXKernel):
     def __init__(self, *, block_size=1024, num_warps=4, ptx=None):
         self.block_size = block_size
         self.constexpr_values = {"BLOCK_SIZE": block_size}
@@ -31,7 +30,8 @@ class AddKernel(TritonPTXKernel):
         output = x + y
         tl.store(output_ptr + offsets, output, mask=mask)
 
-    def get_random_input(self, size=10_000_000):
+    def get_random_input(self):
+        size = 10_000_000
         x = torch.randn(size, device="cuda")
         y = torch.randn(size, device="cuda")
         return x, y

@@ -27,7 +27,8 @@ class TrigonometricIdentityKernel(TritonPTXKernel):
         sine = tl.sin(x)
         tl.store(output_ptr + offsets, cosine * cosine + sine * sine, mask=mask)
 
-    def get_random_input(self, size: int = 10_000_000) -> torch.Tensor:
+    def get_random_input(self) -> torch.Tensor:
+        size = 10_000_000
         return (self._rand_1d(size) * 2.0 - 1.0) * torch.pi
 
     def forward_triton(

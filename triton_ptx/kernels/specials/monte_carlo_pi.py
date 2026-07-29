@@ -28,9 +28,8 @@ class MonteCarloPiKernel(TritonPTXKernel):
         inside_count = tl.sum(inside_circle.to(tl.float32), axis=0)
         tl.atomic_add(output_ptr, inside_count * (4.0 / n_samples), sem="relaxed")
 
-    def get_random_input(
-        self, num_samples: int = 10_000_000
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def get_random_input(self) -> tuple[torch.Tensor, torch.Tensor]:
+        num_samples = 10_000_000
         coordinates = self._rand_1d(num_samples * 2) * 2.0 - 1.0
         return coordinates[:num_samples], coordinates[num_samples:]
 

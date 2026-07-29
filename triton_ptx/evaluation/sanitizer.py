@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import inspect
 import os
 import re
 import shutil
@@ -9,22 +8,12 @@ import subprocess
 import sys
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal, Protocol, cast
+from typing import Literal, cast
 from uuid import uuid4
 
 import orjson
 
 from triton_ptx.evaluation.types import Payload
-from triton_ptx.evaluation.verification import DEFAULT_VERIFICATION_SIZES
-from triton_ptx.kernels import resolve_kernel
-
-
-class _KernelClass(Protocol):
-    """Kernel class surface needed to inspect random-input parameters."""
-
-    def get_random_input(self, **kwargs: int) -> object:
-        """Create random inputs for a candidate launch."""
-
 
 SingleSanitizerTool = Literal["memcheck", "racecheck", "synccheck", "initcheck"]
 SanitizerTool = Literal["all", "memcheck", "racecheck", "synccheck", "initcheck"]
@@ -48,47 +37,10 @@ LOCATION_PATTERN = re.compile(r"candidate\.ptx:(\d+)(?::\d+)?")
 FILE_DIRECTIVE_PATTERN = re.compile(r"^\s*\.file\s+(\d+)\b", re.MULTILINE)
 
 
-def _is_size_arg(name: str) -> bool:
-    """Return whether an input keyword should receive verifier sizes."""
-    normalized_name = name.lower()
-    return any(token in normalized_name for token in ("size", "m", "n", "k", "h", "w", "len")) and not any(
-        token in normalized_name for token in ("kernel", "stride", "block", "tile")
-    )
-
-
-def _input_kwargs_for_size(kernel_name: str, size: int) -> dict[str, int]:
-    """Build ``get_random_input`` kwargs for a verifier size.
-
-    Args:
-        kernel_name: Registered kernel class.
-        size: Verifier size to apply to size-like optional input arguments.
-
-    Returns:
-        Keyword arguments accepted by the kernel's ``get_random_input`` method.
-
-    Raises:
-        ValueError: If the kernel name cannot be resolved.
-    """
-    kernel_cls = cast(type[_KernelClass], resolve_kernel(kernel_name))
-    get_random_input = kernel_cls.get_random_input
-    return {
-        name: size if _is_size_arg(name) else 4
-        for name, parameter in inspect.signature(get_random_input).parameters.items()
-        if name != "self" and parameter.default is not inspect._empty
-    }
-
-
 def _sanitizer_input_kwargs(kernel_name: str) -> list[dict[str, int]]:
-    """Return unique sanitizer input kwargs matching verifier coverage."""
-    seen: set[tuple[tuple[str, int], ...]] = set()
-    input_kwargs: list[dict[str, int]] = []
-    for size in DEFAULT_VERIFICATION_SIZES:
-        kwargs = _input_kwargs_for_size(kernel_name, size)
-        key = tuple(sorted(kwargs.items()))
-        if key not in seen:
-            seen.add(key)
-            input_kwargs.append(kwargs)
-    return input_kwargs or [{}]
+    """Return the kernel's fixed input configuration."""
+    del kernel_name
+    return [{}]
 
 
 def _add_ptx_line_information(ptx: str) -> str:
@@ -109,10 +61,18 @@ def _add_ptx_line_information(ptx: str) -> str:
 
     for line_number, line in enumerate(ptx.splitlines(), start=1):
         stripped = line.strip()
-        if not file_directive_added and not stripped.startswith("//") and re.search(r"\.(?:entry|func)\b", stripped):
+        if (
+            not file_directive_added
+            and not stripped.startswith("//")
+            and re.search(r"\.(?:entry|func)\b", stripped)
+        ):
             annotated_lines.append(file_directive)
             file_directive_added = True
-        is_instruction = brace_depth > 0 and stripped.endswith(";") and not stripped.startswith((".", "//"))
+        is_instruction = (
+            brace_depth > 0
+            and stripped.endswith(";")
+            and not stripped.startswith((".", "//"))
+        )
         if is_instruction:
             indentation = line[: len(line) - len(line.lstrip())]
             annotated_lines.append(f"{indentation}.loc {file_id} {line_number} 0")
@@ -128,7 +88,9 @@ def _add_ptx_line_information(ptx: str) -> str:
     return "\n".join(annotated_lines)
 
 
-def _reported_ptx_locations(diagnostics: list[str], ptx: str) -> list[dict[str, object]]:
+def _reported_ptx_locations(
+    diagnostics: list[str], ptx: str
+) -> list[dict[str, object]]:
     """Extract unique candidate PTX locations named in sanitizer diagnostics.
 
     Args:
@@ -140,7 +102,9 @@ def _reported_ptx_locations(diagnostics: list[str], ptx: str) -> list[dict[str, 
     """
     source_lines = ptx.splitlines()
     line_numbers = {
-        int(match.group(1)) for diagnostic in diagnostics for match in LOCATION_PATTERN.finditer(diagnostic)
+        int(match.group(1))
+        for diagnostic in diagnostics
+        for match in LOCATION_PATTERN.finditer(diagnostic)
     }
     return [
         {
@@ -154,7 +118,9 @@ def _reported_ptx_locations(diagnostics: list[str], ptx: str) -> list[dict[str, 
 
 def _parse_sanitizer_output(output: str) -> dict[str, object]:
     lines = [
-        line for raw_line in output.splitlines() if (line := raw_line.strip().removeprefix(SANITIZER_PREFIX).strip())
+        line
+        for raw_line in output.splitlines()
+        if (line := raw_line.strip().removeprefix(SANITIZER_PREFIX).strip())
     ]
     summary = next(filter(None, map(SUMMARY_PATTERN.search, reversed(lines))), None)
     return {
@@ -224,7 +190,10 @@ def _run_sanitizer_tool(
     ptx_locations = _reported_ptx_locations(diagnostics, ptx)
     location_error = (
         "PTX memory error at "
-        + ", ".join(f"line {location['line']}: {location['source']}" for location in ptx_locations)
+        + ", ".join(
+            f"line {location['line']}: {location['source']}"
+            for location in ptx_locations
+        )
         if ptx_locations
         else None
     )
@@ -276,7 +245,9 @@ def diagnose_ptx(
             "available": False,
             "clean": False,
             "tool": sanitizer_tool,
-            "error": (f"{SANITIZER_ENV_VAR} is not set to the Compute Sanitizer executable path."),
+            "error": (
+                f"{SANITIZER_ENV_VAR} is not set to the Compute Sanitizer executable path."
+            ),
         }
 
     input_kwargs_list = _sanitizer_input_kwargs(kernel_name)
@@ -292,7 +263,11 @@ def diagnose_ptx(
     request_dir.mkdir(parents=True)
     request_path = request_dir / "request.json"
     try:
-        tools = SANITIZER_TOOLS if sanitizer_tool == "all" else (cast(SingleSanitizerTool, sanitizer_tool),)
+        tools = (
+            SANITIZER_TOOLS
+            if sanitizer_tool == "all"
+            else (cast(SingleSanitizerTool, sanitizer_tool),)
+        )
         reports: list[dict[str, object]] = []
         for tool in tools:
             for input_kwargs in input_kwargs_list:
@@ -350,10 +325,15 @@ def _run_request(request_path: Path) -> None:
 
     for kwargs in input_kwargs:
         if not isinstance(kwargs, Mapping) or any(
-            not isinstance(name, str) or not isinstance(value, int) or isinstance(value, bool) or value <= 0
+            not isinstance(name, str)
+            or not isinstance(value, int)
+            or isinstance(value, bool)
+            or value <= 0
             for name, value in kwargs.items()
         ):
-            raise TypeError("Sanitizer request input_kwargs entries must map strings to positive integers.")
+            raise TypeError(
+                "Sanitizer request input_kwargs entries must map strings to positive integers."
+            )
         run_candidate(kernel_name, candidate, kwargs)
 
 

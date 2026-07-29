@@ -6,7 +6,6 @@ from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class SumDimKernel(TritonPTXKernel):
-
     def __init__(self, keepdim=True, block_size=1024, num_warps=4, ptx=None):
         self.keepdim = keepdim
         self.block_size = block_size
@@ -26,7 +25,8 @@ class SumDimKernel(TritonPTXKernel):
             output += tl.sum(inputs, axis=0)
         tl.store(out_ptr, output)
 
-    def get_random_input(self, size=10_000_000):
+    def get_random_input(self):
+        size = 10_000_000
         return self._rand_1d(size)
 
     def forward_triton(self, inputs, ptx=False):

@@ -25,7 +25,8 @@ class InverseSquareRootKernel(TritonPTXKernel):
         x = tl.load(x_ptr + offsets, mask=mask, other=1.0)
         tl.store(output_ptr + offsets, tl.rsqrt(x), mask=mask)
 
-    def get_random_input(self, size: int = 10_000_000) -> torch.Tensor:
+    def get_random_input(self) -> torch.Tensor:
+        size = 10_000_000
         return self._rand_1d(size) * 100.0 + 1.0e-6
 
     def forward_triton(

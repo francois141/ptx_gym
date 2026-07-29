@@ -4,8 +4,8 @@ import triton.language as tl
 
 from triton_ptx.kernels.base import TritonPTXKernel
 
-class SoftmaxKernel(TritonPTXKernel):
 
+class SoftmaxKernel(TritonPTXKernel):
     def __init__(self, block_size=1024, num_warps=4, ptx=None):
         self.block_size = block_size
         self.constexpr_values = {"BLOCK_SIZE": block_size}
@@ -39,9 +39,12 @@ class SoftmaxKernel(TritonPTXKernel):
             offsets = start + tl.arange(0, BLOCK_SIZE)
             mask = offsets < n_elements
             inputs = tl.load(input_ptr + offsets, mask=mask, other=-float("inf"))
-            tl.store(output_ptr + offsets, tl.exp(inputs - maximum) / denominator, mask=mask)
+            tl.store(
+                output_ptr + offsets, tl.exp(inputs - maximum) / denominator, mask=mask
+            )
 
-    def get_random_input(self, size=10_000_000):
+    def get_random_input(self):
+        size = 10_000_000
         return self._rand_1d(size)
 
     def forward_triton(self, inputs, ptx=False):

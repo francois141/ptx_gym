@@ -6,7 +6,6 @@ from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class CumprodKernel(TritonPTXKernel):
-
     def __init__(self, block_size=1024, num_warps=4, ptx=None):
         self.block_size = block_size
         self.constexpr_values = {"BLOCK_SIZE": block_size}
@@ -24,9 +23,13 @@ class CumprodKernel(TritonPTXKernel):
             inputs = tl.load(x_ptr + offsets, mask=mask, other=1.0)
             output = tl.cumprod(inputs, axis=0) * carry
             tl.store(out_ptr + offsets, output, mask=mask)
-            carry = tl.sum(tl.where(tl.arange(0, BLOCK_SIZE) == BLOCK_SIZE - 1, output, 0.0), axis=0)
+            carry = tl.sum(
+                tl.where(tl.arange(0, BLOCK_SIZE) == BLOCK_SIZE - 1, output, 0.0),
+                axis=0,
+            )
 
-    def get_random_input(self, size=10_000_000):
+    def get_random_input(self):
+        size = 10_000_000
         return self._rand_1d(size) + 1e-3
 
     def forward_triton(self, inputs, ptx=False):

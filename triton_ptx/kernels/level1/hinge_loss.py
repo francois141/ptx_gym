@@ -4,8 +4,8 @@ import triton.language as tl
 
 from triton_ptx.kernels.base import TritonPTXKernel
 
-class HingeLossKernel(TritonPTXKernel):
 
+class HingeLossKernel(TritonPTXKernel):
     def __init__(self, *, block_size=1024, num_warps=4, ptx=None):
         self.block_size = block_size
         self.constexpr_values = {"BLOCK_SIZE": block_size}
@@ -27,7 +27,8 @@ class HingeLossKernel(TritonPTXKernel):
         partial_sum = tl.sum(hinge, axis=0)
         tl.atomic_add(loss_ptr, partial_sum, sem="relaxed")
 
-    def get_random_input(self, size=10_000_000):
+    def get_random_input(self):
+        size = 10_000_000
         predictions = torch.rand(size, device="cuda")
         targets = torch.randint(0, 2, (size,), device="cuda").float() * 2 - 1
         return predictions, targets

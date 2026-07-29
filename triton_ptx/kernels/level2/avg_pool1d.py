@@ -9,7 +9,16 @@ from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class AvgPool1dKernel(TritonPTXKernel):
-    def __init__(self, *, kernel_size=2, stride=2, padding=0, block_size=256, num_warps=4, ptx=None):
+    def __init__(
+        self,
+        *,
+        kernel_size=2,
+        stride=2,
+        padding=0,
+        block_size=256,
+        num_warps=4,
+        ptx=None,
+    ):
         self.kernel_size = kernel_size
         self.stride = stride
         self.padding = padding
@@ -24,7 +33,17 @@ class AvgPool1dKernel(TritonPTXKernel):
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
-    def kernel(x_ptr, output_ptr, total, length, out_length, KERNEL_SIZE: tl.constexpr, STRIDE: tl.constexpr, PADDING: tl.constexpr, BLOCK_SIZE: tl.constexpr):
+    def kernel(
+        x_ptr,
+        output_ptr,
+        total,
+        length,
+        out_length,
+        KERNEL_SIZE: tl.constexpr,
+        STRIDE: tl.constexpr,
+        PADDING: tl.constexpr,
+        BLOCK_SIZE: tl.constexpr,
+    ):
         offsets = tl.program_id(axis=0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
         out_l = offsets % out_length
         channel_batch = offsets // out_length
@@ -38,14 +57,19 @@ class AvgPool1dKernel(TritonPTXKernel):
 
         tl.store(output_ptr + offsets, acc / KERNEL_SIZE, mask=offsets < total)
 
-    def get_random_input(self, size=128):
+    def get_random_input(self):
+        size = 128
         length = max(8, min(int(size), 2048))
         return torch.rand((4, 4, length), device="cuda", dtype=torch.float32)
 
     def forward_triton(self, inputs, ptx: bool = False):
         x = inputs
-        out_length = (x.shape[2] + 2 * self.padding - self.kernel_size) // self.stride + 1
-        output = torch.empty((x.shape[0], x.shape[1], out_length), device=x.device, dtype=x.dtype)
+        out_length = (
+            x.shape[2] + 2 * self.padding - self.kernel_size
+        ) // self.stride + 1
+        output = torch.empty(
+            (x.shape[0], x.shape[1], out_length), device=x.device, dtype=x.dtype
+        )
         total = output.numel()
         grid = lambda meta: (triton.cdiv(total, meta["BLOCK_SIZE"]),)
         if not ptx:
@@ -70,4 +94,9 @@ class AvgPool1dKernel(TritonPTXKernel):
         return output, kernel
 
     def forward_torch(self, inputs):
-        return F.avg_pool1d(inputs, kernel_size=self.kernel_size, stride=self.stride, padding=self.padding)
+        return F.avg_pool1d(
+            inputs,
+            kernel_size=self.kernel_size,
+            stride=self.stride,
+            padding=self.padding,
+        )

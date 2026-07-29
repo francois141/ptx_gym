@@ -80,7 +80,8 @@ class LinearSwishDivideClampTanhClampKernel(TritonPTXKernel):
             )
             w = tl.load(
                 weight_ptrs,
-                mask=(offs_n[None, :] < OUT_FEATURES) & (k_offsets[:, None] < IN_FEATURES),
+                mask=(offs_n[None, :] < OUT_FEATURES)
+                & (k_offsets[:, None] < IN_FEATURES),
                 other=0.0,
             )
             acc = tl.dot(x, w, acc=acc, out_dtype=tl.float32, input_precision="ieee")
@@ -103,11 +104,15 @@ class LinearSwishDivideClampTanhClampKernel(TritonPTXKernel):
         tl.store(output_ptrs, acc, mask=out_mask)
 
     def get_random_input(self):
-        return torch.rand((self.batch, self.in_features), device="cuda", dtype=torch.float32)
+        return torch.rand(
+            (self.batch, self.in_features), device="cuda", dtype=torch.float32
+        )
 
     def forward_triton(self, inputs, ptx: bool = False):
         x = inputs
-        output = torch.empty((x.shape[0], self.out_features), device=x.device, dtype=x.dtype)
+        output = torch.empty(
+            (x.shape[0], self.out_features), device=x.device, dtype=x.dtype
+        )
         bias = self.gemm.bias if self.gemm.bias is not None else self.gemm.weight
         grid = lambda meta: (
             triton.cdiv(x.shape[0], meta["BLOCK_M"]),

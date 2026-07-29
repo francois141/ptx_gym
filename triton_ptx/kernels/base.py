@@ -21,7 +21,9 @@ class TritonPTXKernel(ABC):
         self.compiled_kernel = jit_fixed_parameters(self.kernel)
         self.compiled_kernel_ptx = None
         if has_ptx_code(ptx):
-            self.compiled_kernel_ptx = jit_fixed_parameters(self.kernel, ptx=get_ptx_code(ptx))
+            self.compiled_kernel_ptx = jit_fixed_parameters(
+                self.kernel, ptx=get_ptx_code(ptx)
+            )
 
     def ptx_launch_kwargs(self, **kwargs) -> dict[str, Any]:
         launch_kwargs = dict(kwargs)
@@ -29,9 +31,9 @@ class TritonPTXKernel(ABC):
             return launch_kwargs
         launch_kwargs.update(
             {
-            key: self.ptx[key]
-            for key in ("num_threads_x", "num_threads_y", "num_threads_z")
-            if self.ptx.get(key) is not None
+                key: self.ptx[key]
+                for key in ("num_threads_x", "num_threads_y", "num_threads_z")
+                if self.ptx.get(key) is not None
             }
         )
         return launch_kwargs
@@ -46,7 +48,7 @@ class TritonPTXKernel(ABC):
         return torch.rand(size, device="cuda", dtype=dtype)
 
     @abstractmethod
-    def get_random_input(self, *args, **kwargs):
+    def get_random_input(self):
         raise NotImplementedError
 
     @abstractmethod

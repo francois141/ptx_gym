@@ -87,10 +87,20 @@ class Conv2dKernel(TritonPTXKernel):
                 for kw in range(0, KERNEL_SIZE):
                     in_h = out_h_idx * STRIDE - PADDING + kh
                     in_w = out_w_idx * STRIDE - PADDING + kw
-                    valid = (offsets < total) & (in_h >= 0) & (in_h < height) & (in_w >= 0) & (in_w < width)
+                    valid = (
+                        (offsets < total)
+                        & (in_h >= 0)
+                        & (in_h < height)
+                        & (in_w >= 0)
+                        & (in_w < width)
+                    )
                     x_idx = ((batch * IN_CHANNELS + ic) * height + in_h) * width + in_w
-                    w_idx = ((out_channel * IN_CHANNELS + ic) * KERNEL_SIZE + kh) * KERNEL_SIZE + kw
-                    acc += tl.load(x_ptr + x_idx, mask=valid, other=0.0) * tl.load(weight_ptr + w_idx, mask=offsets < total, other=0.0)
+                    w_idx = (
+                        (out_channel * IN_CHANNELS + ic) * KERNEL_SIZE + kh
+                    ) * KERNEL_SIZE + kw
+                    acc += tl.load(x_ptr + x_idx, mask=valid, other=0.0) * tl.load(
+                        weight_ptr + w_idx, mask=offsets < total, other=0.0
+                    )
 
         if HAS_BIAS:
             acc += tl.load(bias_ptr + out_channel, mask=offsets < total, other=0.0)
@@ -111,7 +121,11 @@ class Conv2dKernel(TritonPTXKernel):
         x = inputs
         out_h = (x.shape[2] + 2 * self.padding - self.kernel_size) // self.stride + 1
         out_w = (x.shape[3] + 2 * self.padding - self.kernel_size) // self.stride + 1
-        output = torch.empty((x.shape[0], self.out_channels, out_h, out_w), device=x.device, dtype=x.dtype)
+        output = torch.empty(
+            (x.shape[0], self.out_channels, out_h, out_w),
+            device=x.device,
+            dtype=x.dtype,
+        )
         bias = self.conv1.bias if self.conv1.bias is not None else self.conv1.weight
         total = output.numel()
         grid = lambda meta: (triton.cdiv(total, meta["BLOCK_SIZE"]),)

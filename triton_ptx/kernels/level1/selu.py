@@ -4,8 +4,8 @@ import triton.language as tl
 
 from triton_ptx.kernels.base import TritonPTXKernel
 
-class SELUKernel(TritonPTXKernel):
 
+class SELUKernel(TritonPTXKernel):
     def __init__(self, block_size=1024, num_warps=4, ptx=None):
         self.block_size = block_size
         self.constexpr_values = {"BLOCK_SIZE": block_size}
@@ -23,9 +23,12 @@ class SELUKernel(TritonPTXKernel):
         scale = 1.0507009873554805
         x32 = x.to(tl.float32)
         output = scale * tl.where(x32 > 0, x32, alpha * (tl.exp(x32) - 1.0))
-        tl.store(output_ptr + offsets, output.to(output_ptr.dtype.element_ty), mask=mask)
+        tl.store(
+            output_ptr + offsets, output.to(output_ptr.dtype.element_ty), mask=mask
+        )
 
-    def get_random_input(self, size=10_000_000):
+    def get_random_input(self):
+        size = 10_000_000
         return self._rand_1d(size)
 
     def forward_triton(self, inputs, ptx=False):

@@ -108,8 +108,12 @@ class ConvTranspose2dAddClampScaleClampDivideKernel(TritonPTXKernel):
                         & (div_h < in_h)
                         & (div_w < in_w)
                     )
-                    x_idx = ((batch_idx * IN_CHANNELS + in_c) * in_h + div_h) * in_w + div_w
-                    w_idx = ((in_c * OUT_CHANNELS + out_c) * KERNEL_SIZE + kh) * KERNEL_SIZE + kw
+                    x_idx = (
+                        (batch_idx * IN_CHANNELS + in_c) * in_h + div_h
+                    ) * in_w + div_w
+                    w_idx = (
+                        (in_c * OUT_CHANNELS + out_c) * KERNEL_SIZE + kh
+                    ) * KERNEL_SIZE + kw
                     acc += tl.load(x_ptr + x_idx, mask=valid, other=0.0) * tl.load(
                         weight_ptr + w_idx, mask=mask, other=0.0
                     )
@@ -123,13 +127,31 @@ class ConvTranspose2dAddClampScaleClampDivideKernel(TritonPTXKernel):
         tl.store(output_ptr + offsets, acc, mask=mask)
 
     def get_random_input(self):
-        return torch.rand((self.batch, self.in_channels, self.height, self.width), device="cuda", dtype=torch.float32)
+        return torch.rand(
+            (self.batch, self.in_channels, self.height, self.width),
+            device="cuda",
+            dtype=torch.float32,
+        )
 
     def forward_triton(self, inputs, ptx: bool = False):
         x = inputs
-        out_h = (x.shape[2] - 1) * self.stride - 2 * self.padding + self.kernel_size + self.output_padding
-        out_w = (x.shape[3] - 1) * self.stride - 2 * self.padding + self.kernel_size + self.output_padding
-        output = torch.empty((x.shape[0], self.out_channels, out_h, out_w), device=x.device, dtype=x.dtype)
+        out_h = (
+            (x.shape[2] - 1) * self.stride
+            - 2 * self.padding
+            + self.kernel_size
+            + self.output_padding
+        )
+        out_w = (
+            (x.shape[3] - 1) * self.stride
+            - 2 * self.padding
+            + self.kernel_size
+            + self.output_padding
+        )
+        output = torch.empty(
+            (x.shape[0], self.out_channels, out_h, out_w),
+            device=x.device,
+            dtype=x.dtype,
+        )
         total = output.numel()
         grid = lambda meta: (triton.cdiv(total, meta["BLOCK_SIZE"]),)
         if not ptx:

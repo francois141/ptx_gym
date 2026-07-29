@@ -47,10 +47,14 @@ def test_reported_ptx_locations_includes_offending_source() -> None:
         "at candidate.ptx:3 in kernel",
     ]
 
-    assert _reported_ptx_locations(diagnostics, ptx) == [{"line": 3, "source": "st.global.u32 [address], 1;"}]
+    assert _reported_ptx_locations(diagnostics, ptx) == [
+        {"line": 3, "source": "st.global.u32 [address], 1;"}
+    ]
 
 
-def test_sanitizer_report_error_names_ptx_line(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_sanitizer_report_error_names_ptx_line(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """Put the offending PTX line in the evaluator's primary error message."""
     completed = subprocess.CompletedProcess(
         args=[],
@@ -72,17 +76,14 @@ def test_sanitizer_report_error_names_ptx_line(monkeypatch: pytest.MonkeyPatch, 
         "mov.u64 address, 0;\nst.global.u32 [address], 1;\n",
     )
 
-    assert report["error"] == ("PTX memory error at line 2: st.global.u32 [address], 1;")
+    assert report["error"] == (
+        "PTX memory error at line 2: st.global.u32 [address], 1;"
+    )
 
 
-def test_sanitizer_input_kwargs_match_verifier_matrix_sizes() -> None:
-    """Exercise matrix multiplication with every verifier k size."""
-    assert _sanitizer_input_kwargs("MatrixMultiplicationKernel") == [
-        {"k": 32},
-        {"k": 64},
-        {"k": 128},
-        {"k": 256},
-    ]
+def test_sanitizer_input_kwargs_use_kernel_static_size() -> None:
+    """Use the kernel's fixed input size without overriding it."""
+    assert _sanitizer_input_kwargs("MatrixMultiplicationKernel") == [{}]
 
 
 def test_run_request_launches_all_input_kwargs(

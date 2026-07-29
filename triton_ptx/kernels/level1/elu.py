@@ -4,8 +4,8 @@ import triton.language as tl
 
 from triton_ptx.kernels.base import TritonPTXKernel
 
-class ELUKernel(TritonPTXKernel):
 
+class ELUKernel(TritonPTXKernel):
     def __init__(self, alpha=1.0, block_size=1024, num_warps=4, ptx=None):
         self.alpha = alpha
         self.block_size = block_size
@@ -21,9 +21,12 @@ class ELUKernel(TritonPTXKernel):
         x = tl.load(x_ptr + offsets, mask=mask)
         x32 = x.to(tl.float32)
         output = tl.where(x32 > 0, x32, alpha * (tl.exp(x32) - 1.0))
-        tl.store(output_ptr + offsets, output.to(output_ptr.dtype.element_ty), mask=mask)
+        tl.store(
+            output_ptr + offsets, output.to(output_ptr.dtype.element_ty), mask=mask
+        )
 
-    def get_random_input(self, size=10_000_000):
+    def get_random_input(self):
+        size = 10_000_000
         return self._rand_1d(size)
 
     def forward_triton(self, inputs, ptx=False):

@@ -6,7 +6,6 @@ from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class KLDivBatchMeanKernel(TritonPTXKernel):
-
     def __init__(self, block_size=1024, num_warps=4, ptx=None):
         self.block_size = block_size
         self.constexpr_values = {"BLOCK_SIZE": block_size}
@@ -26,7 +25,8 @@ class KLDivBatchMeanKernel(TritonPTXKernel):
         kl = target * (tl.log(target) - tl.log(pred))
         tl.atomic_add(accum_ptr, tl.sum(kl, axis=0), sem="relaxed")
 
-    def get_random_input(self, size=10_000_000):
+    def get_random_input(self):
+        size = 10_000_000
         pred = self._rand_1d(size)
         pred = pred / pred.sum()
         target = self._rand_1d(size)

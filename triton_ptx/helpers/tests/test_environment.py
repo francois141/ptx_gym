@@ -83,8 +83,12 @@ def test_compile_ptx(monkeypatch: pytest.MonkeyPatch) -> None:
         calls["command"] = command
         return Completed()
 
-    monkeypatch.setattr(compilation, "get_ptx_system_config", lambda: ("8.7", "sm_90", 64))
-    monkeypatch.setattr(compilation, "get_ptxas_path", lambda target=None: Path("/fake/ptxas"))
+    monkeypatch.setattr(
+        compilation, "get_ptx_system_config", lambda: ("8.7", "sm_90", 64)
+    )
+    monkeypatch.setattr(
+        compilation, "get_ptxas_path", lambda target=None: Path("/fake/ptxas")
+    )
     monkeypatch.setattr(compilation.subprocess, "run", fake_run)
 
     result = compile_ptx(Payload(ptx=".version 8.0\n", threads_x=128))

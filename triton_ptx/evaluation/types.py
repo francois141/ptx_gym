@@ -22,8 +22,12 @@ class Payload:
 
         for name in ("threads_x", "threads_y", "threads_z"):
             value = getattr(self, name)
-            if value is not None and (not isinstance(value, int) or isinstance(value, bool) or value <= 0):
-                raise ValueError(f'Candidate payload field "{name}" must be a positive integer.')
+            if value is not None and (
+                not isinstance(value, int) or isinstance(value, bool) or value <= 0
+            ):
+                raise ValueError(
+                    f'Candidate payload field "{name}" must be a positive integer.'
+                )
 
     @classmethod
     def from_input(cls, payload: Payload | dict[str, Any]) -> Payload:
@@ -58,7 +62,9 @@ class Payload:
 def _json_safe(value: Any) -> Any:
     if isinstance(value, dict):
         return {
-            key if isinstance(key, (str, int, float, bool)) or key is None else str(key): _json_safe(item)
+            key
+            if isinstance(key, (str, int, float, bool)) or key is None
+            else str(key): _json_safe(item)
             for key, item in value.items()
         }
 

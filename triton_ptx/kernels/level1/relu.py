@@ -4,8 +4,8 @@ import triton.language as tl
 
 from triton_ptx.kernels.base import TritonPTXKernel
 
-class ReLUKernel(TritonPTXKernel):
 
+class ReLUKernel(TritonPTXKernel):
     def __init__(self, block_size=1024, num_warps=4, ptx=None):
         self.block_size = block_size
         self.constexpr_values = {"BLOCK_SIZE": block_size}
@@ -20,7 +20,8 @@ class ReLUKernel(TritonPTXKernel):
         x = tl.load(x_ptr + offsets, mask=mask)
         tl.store(output_ptr + offsets, tl.maximum(x, 0.0), mask=mask)
 
-    def get_random_input(self, size=10_000_000):
+    def get_random_input(self):
+        size = 10_000_000
         return self._rand_1d(size)
 
     def forward_triton(self, x, ptx=False):

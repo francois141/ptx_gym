@@ -36,13 +36,25 @@ class LinearDivideSumScaleKernel(TritonPTXKernel):
             "BLOCK_K": block_k,
         }
         self.num_warps = num_warps
-        self.weight = torch.nn.Parameter(torch.randn((hidden_size, input_size), device="cuda"))
+        self.weight = torch.nn.Parameter(
+            torch.randn((hidden_size, input_size), device="cuda")
+        )
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
     def kernel(
-        x_ptr, weight_ptr, output_ptr, batch, scaling_factor, stride_xm, stride_wn,
-        INPUT_SIZE: tl.constexpr, HIDDEN_SIZE: tl.constexpr, BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+        x_ptr,
+        weight_ptr,
+        output_ptr,
+        batch,
+        scaling_factor,
+        stride_xm,
+        stride_wn,
+        INPUT_SIZE: tl.constexpr,
+        HIDDEN_SIZE: tl.constexpr,
+        BLOCK_M: tl.constexpr,
+        BLOCK_N: tl.constexpr,
+        BLOCK_K: tl.constexpr,
     ):
         pid_m = tl.program_id(0)
         offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
@@ -55,16 +67,29 @@ class LinearDivideSumScaleKernel(TritonPTXKernel):
             acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
             for k_start in range(0, tl.cdiv(INPUT_SIZE, BLOCK_K)):
                 k_offsets = k_start * BLOCK_K + offs_k
-                x = tl.load(x_ptrs, mask=(offs_m[:, None] < batch) & (k_offsets[None, :] < INPUT_SIZE), other=0.0)
-                w = tl.load(w_ptrs, mask=(offs_n[None, :] < HIDDEN_SIZE) & (k_offsets[:, None] < INPUT_SIZE), other=0.0)
-                acc = tl.dot(x, w, acc=acc, out_dtype=tl.float32, input_precision="ieee")
+                x = tl.load(
+                    x_ptrs,
+                    mask=(offs_m[:, None] < batch) & (k_offsets[None, :] < INPUT_SIZE),
+                    other=0.0,
+                )
+                w = tl.load(
+                    w_ptrs,
+                    mask=(offs_n[None, :] < HIDDEN_SIZE)
+                    & (k_offsets[:, None] < INPUT_SIZE),
+                    other=0.0,
+                )
+                acc = tl.dot(
+                    x, w, acc=acc, out_dtype=tl.float32, input_precision="ieee"
+                )
                 x_ptrs += BLOCK_K
                 w_ptrs += BLOCK_K
             sum_acc += tl.sum(acc / 2.0, axis=1)
         tl.store(output_ptr + offs_m, sum_acc * scaling_factor, mask=offs_m < batch)
 
     def get_random_input(self):
-        return torch.rand((self.batch, self.input_size), device="cuda", dtype=torch.float32)
+        return torch.rand(
+            (self.batch, self.input_size), device="cuda", dtype=torch.float32
+        )
 
     def forward_triton(self, inputs, ptx: bool = False):
         x = inputs

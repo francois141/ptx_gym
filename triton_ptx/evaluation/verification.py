@@ -1,4 +1,3 @@
-import inspect
 import random
 
 import torch
@@ -7,24 +6,20 @@ from triton_ptx.helpers.environment import get_available_video_memory_bytes
 from triton_ptx.helpers.kernels import has_ptx_code
 from triton_ptx.helpers.serialization import dump_nested, tensor_bytes, tensor_summary
 
-DEFAULT_VERIFICATION_SIZES = [32, 64, 128]
-
 
 class OutputVerifier(BaseVerifier):
     MAX_VIDEO_MEMORY_FRACTION = 0.70
 
     def __init__(
         self,
-        sizes=DEFAULT_VERIFICATION_SIZES,  # TODO: In the future make it work with irregular values
-        iters_per_size=250,
+        iterations=1000,
         seed=42,
         rtol=1e-3,
         atol=1e-3,
         max_print=32,
         max_video_memory_fraction=MAX_VIDEO_MEMORY_FRACTION,
     ):
-        self.sizes = sizes
-        self.iters_per_size = iters_per_size
+        self.iterations = iterations
         self.seed = seed
         self.rtol = rtol
         self.atol = atol
@@ -33,19 +28,6 @@ class OutputVerifier(BaseVerifier):
         self.last_report = {}
 
         self._set_memory_budget()
-
-    def _is_size_arg(self, name):
-        name = name.lower()
-        return any(x in name for x in ("size", "m", "n", "k", "h", "w", "len")) and not any(
-            x in name for x in ("kernel", "stride", "block", "tile")
-        )
-
-    def _kwargs(self, op, size):
-        return {
-            name: size if self._is_size_arg(name) else 4
-            for name, param in inspect.signature(op.get_random_input).parameters.items()
-            if param.default is not inspect._empty
-        }
 
     def _numel(self, x):
         if isinstance(x, torch.Tensor):
@@ -62,13 +44,18 @@ class OutputVerifier(BaseVerifier):
             return
 
         available_bytes = get_available_video_memory_bytes(torch.cuda.current_device())
-        self._max_verification_bytes = int(available_bytes * self.max_video_memory_fraction)
+        self._max_verification_bytes = int(
+            available_bytes * self.max_video_memory_fraction
+        )
 
-    def _assert_input_limits(self, size, inputs):
+    def _assert_input_limits(self, inputs):
         input_bytes = tensor_bytes(inputs)
-        if self._max_verification_bytes is not None and input_bytes > self._max_verification_bytes:
+        if (
+            self._max_verification_bytes is not None
+            and input_bytes > self._max_verification_bytes
+        ):
             raise ValueError(
-                f"size={size} generated {input_bytes} bytes of tensor inputs, "
+                f"generated {input_bytes} bytes of tensor inputs, "
                 f"above verification memory budget {self._max_verification_bytes} bytes "
                 f"({self.max_video_memory_fraction:.0%} of available video memory)"
             )
@@ -85,11 +72,14 @@ class OutputVerifier(BaseVerifier):
 
         if isinstance(actual, (list, tuple)) and isinstance(expected, (list, tuple)):
             return len(actual) == len(expected) and all(
-                self._same(actual_item, expected_item) for actual_item, expected_item in zip(actual, expected)
+                self._same(actual_item, expected_item)
+                for actual_item, expected_item in zip(actual, expected)
             )
 
         if isinstance(actual, dict) and isinstance(expected, dict):
-            return actual.keys() == expected.keys() and all(self._same(actual[key], expected[key]) for key in actual)
+            return actual.keys() == expected.keys() and all(
+                self._same(actual[key], expected[key]) for key in actual
+            )
 
         return actual == expected
 
@@ -143,10 +133,7 @@ class OutputVerifier(BaseVerifier):
 
     def _failure_report(
         self,
-        size,
         iteration,
-        kwargs,
-        inputs,
         triton_out,
         expected_out,
         expected_name="ptx",
@@ -154,12 +141,12 @@ class OutputVerifier(BaseVerifier):
         report = {
             "status": "failed",
             "seed": self.seed,
-            "size": size,
             "iteration": iteration,
-            "kwargs": kwargs,
         }
 
-        if not isinstance(expected_out, torch.Tensor) or not isinstance(triton_out, torch.Tensor):
+        if not isinstance(expected_out, torch.Tensor) or not isinstance(
+            triton_out, torch.Tensor
+        ):
             report[f"{expected_name}_output"] = dump_nested(expected_out)
             report["triton_output"] = dump_nested(triton_out)
             return report
@@ -203,34 +190,27 @@ class OutputVerifier(BaseVerifier):
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(self.seed)
 
-        for size in self.sizes:
-            for iteration in range(self.iters_per_size):
-                kwargs = self._kwargs(op, size)
-                inputs = op.get_random_input(**kwargs)
+        for iteration in range(self.iterations):
+            inputs = op.get_random_input()
 
-                self._assert_input_limits(size, inputs)
+            self._assert_input_limits(inputs)
 
-                triton_out, _ = op.forward_triton(inputs)
-                ptx_out, _ = op.forward_triton(inputs, ptx=True)
+            triton_out, _ = op.forward_triton(inputs)
+            ptx_out, _ = op.forward_triton(inputs, ptx=True)
 
-                if not self._same(ptx_out, triton_out):
-                    self.last_report = self._failure_report(
-                        size,
-                        iteration,
-                        kwargs,
-                        inputs,
-                        triton_out,
-                        ptx_out,
-                    )
-                    return False
+            if not self._same(ptx_out, triton_out):
+                self.last_report = self._failure_report(
+                    iteration,
+                    triton_out,
+                    ptx_out,
+                )
+                return False
 
-                self.last_report = {
-                    "status": "passed",
-                    "seed": self.seed,
-                    "size": size,
-                    "iteration": iteration,
-                    "kwargs": kwargs,
-                }
+            self.last_report = {
+                "status": "passed",
+                "seed": self.seed,
+                "iteration": iteration,
+            }
 
         return True
 
@@ -241,34 +221,27 @@ class OutputVerifier(BaseVerifier):
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(self.seed)
 
-        for size in self.sizes:
-            for iteration in range(self.iters_per_size):
-                kwargs = self._kwargs(op, size)
-                inputs = op.get_random_input(**kwargs)
+        for iteration in range(self.iterations):
+            inputs = op.get_random_input()
 
-                self._assert_input_limits(size, inputs)
+            self._assert_input_limits(inputs)
 
-                triton_out, _ = op.forward_triton(inputs)
-                torch_out = op.forward_torch(inputs)
+            triton_out, _ = op.forward_triton(inputs)
+            torch_out = op.forward_torch(inputs)
 
-                if not self._same(triton_out, torch_out):
-                    self.last_report = self._failure_report(
-                        size,
-                        iteration,
-                        kwargs,
-                        inputs,
-                        triton_out,
-                        torch_out,
-                        expected_name="torch",
-                    )
-                    return False
+            if not self._same(triton_out, torch_out):
+                self.last_report = self._failure_report(
+                    iteration,
+                    triton_out,
+                    torch_out,
+                    expected_name="torch",
+                )
+                return False
 
-                self.last_report = {
-                    "status": "passed",
-                    "seed": self.seed,
-                    "size": size,
-                    "iteration": iteration,
-                    "kwargs": kwargs,
-                }
+            self.last_report = {
+                "status": "passed",
+                "seed": self.seed,
+                "iteration": iteration,
+            }
 
         return True

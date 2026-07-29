@@ -6,7 +6,6 @@ from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class TripletMarginLossKernel(TritonPTXKernel):
-
     def __init__(self, margin=1.0, block_size=1024, num_warps=4, ptx=None):
         self.margin = margin
         self.block_size = block_size
@@ -15,8 +14,15 @@ class TripletMarginLossKernel(TritonPTXKernel):
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
-    def kernel(anchor_ptr, positive_ptr, negative_ptr, accum_ptr,
-            n_elements, margin, BLOCK_SIZE: tl.constexpr):
+    def kernel(
+        anchor_ptr,
+        positive_ptr,
+        negative_ptr,
+        accum_ptr,
+        n_elements,
+        margin,
+        BLOCK_SIZE: tl.constexpr,
+    ):
         if tl.program_id(0) != 0:
             return
         dap2 = 0.0
@@ -36,7 +42,8 @@ class TripletMarginLossKernel(TritonPTXKernel):
         loss = tl.maximum(dap - dan + margin, 0.0)
         tl.store(accum_ptr, loss)
 
-    def get_random_input(self, size=10_000_000):
+    def get_random_input(self):
+        size = 10_000_000
         a = self._rand_1d(size)
         p = self._rand_1d(size)
         n = self._rand_1d(size)

@@ -92,21 +92,15 @@ class DotProductAttentionKernel(TritonPTXKernel):
             other=0.0,
         )
         output = tl.sum(weights[:, None] * values, axis=0)
-        output_base = output_ptr + batch * stride_ob + head * stride_oh + row * stride_os
+        output_base = (
+            output_ptr + batch * stride_ob + head * stride_oh + row * stride_os
+        )
         tl.store(output_base + dim_offsets, output, mask=(row < n_rows) & dim_mask)
 
-    def get_random_input(
-        self,
-        seq_len: int | None = None,
-        head_dim: int | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def get_random_input(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Create random query, key, and value tensors."""
-        if seq_len is None:
-            seq_len = self.seq_len
-        if head_dim is None:
-            head_dim = self.head_dim
-        seq_len = min(seq_len, self.block_seq)
-        head_dim = min(head_dim, self.block_dim)
+        seq_len = min(self.seq_len, self.block_seq)
+        head_dim = min(self.head_dim, self.block_dim)
         shape = (self.batch_size, self.num_heads, seq_len, head_dim)
         return (
             torch.randn(shape, device="cuda", dtype=torch.float32),
@@ -127,7 +121,9 @@ class DotProductAttentionKernel(TritonPTXKernel):
             raise ValueError("q, k, and v must be 4D tensors")
         output = torch.empty_like(q)
         launch_kernel = self.compiled_kernel_ptx if ptx else self.compiled_kernel
-        launch_kwargs = self.ptx_launch_kwargs() if ptx else {"num_warps": self.num_warps}
+        launch_kwargs = (
+            self.ptx_launch_kwargs() if ptx else {"num_warps": self.num_warps}
+        )
         batch_size, num_heads, seq_len, head_dim = q.shape
         grid = (seq_len, num_heads, batch_size)
         launched_kernel = launch_kernel[grid](

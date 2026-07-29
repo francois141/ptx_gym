@@ -99,7 +99,7 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
             verifier = OutputVerifier()
             correct = verifier.verify(operator)
             verifier_report = getattr(verifier, "last_report", {})
-            
+
         except Exception as exc:
             return EvaluatedCandidate.failed(
                 kernel_name=self.kernel_name,
@@ -160,7 +160,11 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
                 p90=float(ptx_timing.p90),
                 p95=float(ptx_timing.p95),
                 p99=float(ptx_timing.p99),
-                speedup_vs_triton=(float(triton_timing.p50 / ptx_timing.p50) if ptx_timing.p50 > 0 else None),
+                speedup_vs_triton=(
+                    float(triton_timing.p50 / ptx_timing.p50)
+                    if ptx_timing.p50 > 0
+                    else None
+                ),
                 compile_output=compile_output,
                 compile_error=compile_error,
                 ncu_report=ncu_report,

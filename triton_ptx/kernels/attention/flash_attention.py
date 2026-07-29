@@ -131,11 +131,7 @@ class FlashAttentionKernel(TritonPTXKernel):
         )
         tl.store(output_ptrs, output, mask=query_mask)
 
-    def get_random_input(
-        self,
-        seq_len: int | None = None,
-        head_dim: int | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def get_random_input(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Create random self-attention inputs."""
         seq_len = self.seq_len
         head_dim = self.head_dim

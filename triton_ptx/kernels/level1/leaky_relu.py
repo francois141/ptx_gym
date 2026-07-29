@@ -4,8 +4,8 @@ import triton.language as tl
 
 from triton_ptx.kernels.base import TritonPTXKernel
 
-class LeakyReLUKernel(TritonPTXKernel):
 
+class LeakyReLUKernel(TritonPTXKernel):
     def __init__(self, negative_slope=0.01, block_size=1024, num_warps=4, ptx=None):
         self.negative_slope = negative_slope
         self.block_size = block_size
@@ -22,7 +22,8 @@ class LeakyReLUKernel(TritonPTXKernel):
         output = tl.where(x >= 0, x, x * negative_slope)
         tl.store(output_ptr + offsets, output, mask=mask)
 
-    def get_random_input(self, size=10_000_000):
+    def get_random_input(self):
+        size = 10_000_000
         return self._rand_1d(size)
 
     def forward_triton(self, inputs, ptx=False):
@@ -48,4 +49,6 @@ class LeakyReLUKernel(TritonPTXKernel):
         return output, kernel
 
     def forward_torch(self, inputs):
-        return torch.nn.functional.leaky_relu(inputs, negative_slope=self.negative_slope)
+        return torch.nn.functional.leaky_relu(
+            inputs, negative_slope=self.negative_slope
+        )

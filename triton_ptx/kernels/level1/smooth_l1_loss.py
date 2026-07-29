@@ -6,7 +6,6 @@ from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class SmoothL1LossKernel(TritonPTXKernel):
-
     def __init__(self, beta=1.0, block_size=1024, num_warps=4, ptx=None):
         self.beta = beta
         self.block_size = block_size
@@ -15,7 +14,9 @@ class SmoothL1LossKernel(TritonPTXKernel):
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
-    def kernel(pred_ptr, target_ptr, accum_ptr, n_elements, beta, BLOCK_SIZE: tl.constexpr):
+    def kernel(
+        pred_ptr, target_ptr, accum_ptr, n_elements, beta, BLOCK_SIZE: tl.constexpr
+    ):
         pid = tl.program_id(axis=0)
         offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
         mask = offsets < n_elements
@@ -27,7 +28,8 @@ class SmoothL1LossKernel(TritonPTXKernel):
         loss = tl.where(diff < beta, quadratic, linear)
         tl.atomic_add(accum_ptr, tl.sum(loss, axis=0), sem="relaxed")
 
-    def get_random_input(self, size=10_000_000):
+    def get_random_input(self):
+        size = 10_000_000
         return self._rand_1d(size), self._rand_1d(size)
 
     def forward_triton(self, inputs, ptx=False):

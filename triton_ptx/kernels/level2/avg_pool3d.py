@@ -9,7 +9,16 @@ from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class AvgPool3dKernel(TritonPTXKernel):
-    def __init__(self, *, kernel_size=2, stride=2, padding=0, block_size=256, num_warps=4, ptx=None):
+    def __init__(
+        self,
+        *,
+        kernel_size=2,
+        stride=2,
+        padding=0,
+        block_size=256,
+        num_warps=4,
+        ptx=None,
+    ):
         self.kernel_size = kernel_size
         self.stride = stride
         self.padding = padding
@@ -24,7 +33,21 @@ class AvgPool3dKernel(TritonPTXKernel):
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
-    def kernel(x_ptr, output_ptr, total, depth, height, width, out_d, out_h, out_w, KERNEL_SIZE: tl.constexpr, STRIDE: tl.constexpr, PADDING: tl.constexpr, BLOCK_SIZE: tl.constexpr):
+    def kernel(
+        x_ptr,
+        output_ptr,
+        total,
+        depth,
+        height,
+        width,
+        out_d,
+        out_h,
+        out_w,
+        KERNEL_SIZE: tl.constexpr,
+        STRIDE: tl.constexpr,
+        PADDING: tl.constexpr,
+        BLOCK_SIZE: tl.constexpr,
+    ):
         offsets = tl.program_id(axis=0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
         out_w_idx = offsets % out_w
         out_h_idx = (offsets // out_w) % out_h
@@ -39,12 +62,29 @@ class AvgPool3dKernel(TritonPTXKernel):
                     in_d = out_d_idx * STRIDE - PADDING + kd
                     in_h = out_h_idx * STRIDE - PADDING + kh
                     in_w = out_w_idx * STRIDE - PADDING + kw
-                    valid = (offsets < total) & (in_d >= 0) & (in_d < depth) & (in_h >= 0) & (in_h < height) & (in_w >= 0) & (in_w < width)
-                    acc += tl.load(x_ptr + base + (in_d * height + in_h) * width + in_w, mask=valid, other=0.0)
+                    valid = (
+                        (offsets < total)
+                        & (in_d >= 0)
+                        & (in_d < depth)
+                        & (in_h >= 0)
+                        & (in_h < height)
+                        & (in_w >= 0)
+                        & (in_w < width)
+                    )
+                    acc += tl.load(
+                        x_ptr + base + (in_d * height + in_h) * width + in_w,
+                        mask=valid,
+                        other=0.0,
+                    )
 
-        tl.store(output_ptr + offsets, acc / (KERNEL_SIZE * KERNEL_SIZE * KERNEL_SIZE), mask=offsets < total)
+        tl.store(
+            output_ptr + offsets,
+            acc / (KERNEL_SIZE * KERNEL_SIZE * KERNEL_SIZE),
+            mask=offsets < total,
+        )
 
-    def get_random_input(self, size=128):
+    def get_random_input(self):
+        size = 128
         side = max(4, min(round(int(size) ** (1 / 3)), 32))
         return torch.rand((2, 4, side, side, side), device="cuda", dtype=torch.float32)
 
@@ -53,7 +93,11 @@ class AvgPool3dKernel(TritonPTXKernel):
         out_d = (x.shape[2] + 2 * self.padding - self.kernel_size) // self.stride + 1
         out_h = (x.shape[3] + 2 * self.padding - self.kernel_size) // self.stride + 1
         out_w = (x.shape[4] + 2 * self.padding - self.kernel_size) // self.stride + 1
-        output = torch.empty((x.shape[0], x.shape[1], out_d, out_h, out_w), device=x.device, dtype=x.dtype)
+        output = torch.empty(
+            (x.shape[0], x.shape[1], out_d, out_h, out_w),
+            device=x.device,
+            dtype=x.dtype,
+        )
         total = output.numel()
         grid = lambda meta: (triton.cdiv(total, meta["BLOCK_SIZE"]),)
         if not ptx:
@@ -82,4 +126,9 @@ class AvgPool3dKernel(TritonPTXKernel):
         return output, kernel
 
     def forward_torch(self, inputs):
-        return F.avg_pool3d(inputs, kernel_size=self.kernel_size, stride=self.stride, padding=self.padding)
+        return F.avg_pool3d(
+            inputs,
+            kernel_size=self.kernel_size,
+            stride=self.stride,
+            padding=self.padding,
+        )

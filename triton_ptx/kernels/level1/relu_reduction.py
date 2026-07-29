@@ -6,7 +6,6 @@ from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class ReLUReductionKernel(TritonPTXKernel):
-
     def __init__(self, block_size=1024, num_warps=4, ptx=None):
         self.block_size = block_size
         self.constexpr_values = {"BLOCK_SIZE": block_size}
@@ -22,7 +21,8 @@ class ReLUReductionKernel(TritonPTXKernel):
         relu_sum = tl.sum(tl.maximum(x, 0.0), axis=0)
         tl.atomic_add(output_ptr, relu_sum, sem="relaxed")
 
-    def get_random_input(self, size=10_000_000):
+    def get_random_input(self):
+        size = 10_000_000
         return self._rand_1d(size)
 
     def forward_triton(self, x, ptx=False):

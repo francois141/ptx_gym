@@ -57,7 +57,9 @@ class RMSNormKernel(TritonPTXKernel):
         )
         mean_square = tl.sum(values * values, axis=1) / features
         x = tl.load(x_ptr + offsets, mask=offsets < total, other=0.0)
-        tl.store(output_ptr + offsets, x / tl.sqrt(mean_square + eps), mask=offsets < total)
+        tl.store(
+            output_ptr + offsets, x / tl.sqrt(mean_square + eps), mask=offsets < total
+        )
 
     def get_random_input(self):
         return torch.rand(
@@ -94,5 +96,5 @@ class RMSNormKernel(TritonPTXKernel):
         return output, kernel
 
     def forward_torch(self, inputs):
-        rms = torch.sqrt(torch.mean(inputs ** 2, dim=1, keepdim=True) + self.eps)
+        rms = torch.sqrt(torch.mean(inputs**2, dim=1, keepdim=True) + self.eps)
         return inputs / rms

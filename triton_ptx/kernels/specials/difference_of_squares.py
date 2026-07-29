@@ -28,9 +28,8 @@ class DifferenceOfSquaresKernel(TritonPTXKernel):
         difference_squared = (x - y) * (x - y)
         tl.store(output_ptr + offsets, sum_squared - difference_squared, mask=mask)
 
-    def get_random_input(
-        self, size: int = 10_000_000
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def get_random_input(self) -> tuple[torch.Tensor, torch.Tensor]:
+        size = 10_000_000
         return self._rand_1d(size) * 2.0 - 1.0, self._rand_1d(size) * 2.0 - 1.0
 
     def forward_triton(
