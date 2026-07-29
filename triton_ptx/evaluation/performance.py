@@ -10,6 +10,8 @@ from triton_ptx.helpers.triton import clear_triton_cache
 def benchmark(fn) -> Timing:
     p20, p50, p80, p90, p95, p99 = triton.testing.do_bench(
         fn,
+        warmup=500,
+        rep=5000,
         quantiles=[0.2, 0.5, 0.8, 0.9, 0.95, 0.99],
     )
     return Timing(p20, p50, p80, p90, p95, p99)
