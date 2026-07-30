@@ -93,5 +93,5 @@ class MatrixMultiplicationFloat16(TritonPTXKernel):
         return c, kernel
 
     def forward_torch(self, inputs):
-        a, b = inputs
+        a, b, _ = inputs
         return torch.matmul(a, b)
