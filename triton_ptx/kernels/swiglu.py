@@ -28,6 +28,13 @@ class SwiGLUKernel(TritonPTXKernel):
             torch.randn(self.size, device="cuda", dtype=torch.float32),
         )
 
+    def get_shape_information(self) -> str:
+        return (
+            f"- gate_ptr: float32 tensor with shape ({self.size},)\n"
+            f"- value_ptr: float32 tensor with shape ({self.size},)\n"
+            f"- output_ptr: float32 tensor with shape ({self.size},)"
+        )
+
     def forward_triton(self, inputs, ptx=False):
         gate, value = inputs
         output = torch.empty_like(gate)

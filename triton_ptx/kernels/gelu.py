@@ -30,6 +30,12 @@ class GELUKernel(TritonPTXKernel):
     def get_random_input(self):
         return self._rand_1d(self.size)
 
+    def get_shape_information(self) -> str:
+        return (
+            f"- x_ptr: float32 tensor with shape ({self.size},)\n"
+            f"- output_ptr: float32 tensor with shape ({self.size},)"
+        )
+
     def forward_triton(self, x, ptx=False):
         n_elements = x.numel()
         output = torch.empty_like(x)

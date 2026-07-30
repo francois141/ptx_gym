@@ -24,6 +24,12 @@ class SiLUKernel(TritonPTXKernel):
     def get_random_input(self):
         return torch.randn(self.size, device="cuda", dtype=torch.float32)
 
+    def get_shape_information(self) -> str:
+        return (
+            f"- x_ptr: float32 tensor with shape ({self.size},)\n"
+            f"- output_ptr: float32 tensor with shape ({self.size},)"
+        )
+
     def forward_triton(self, x, ptx=False):
         output = torch.empty_like(x)
         launch_kernel = self.compiled_kernel_ptx if ptx else self.compiled_kernel

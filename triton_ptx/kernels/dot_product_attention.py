@@ -92,6 +92,18 @@ class DotProductAttentionKernel(TritonPTXKernel):
             torch.randn(shape, device="cuda", dtype=torch.float32),
         )
 
+    def get_shape_information(self) -> str:
+        shape = (
+            self.batch_size,
+            self.num_heads,
+            self.seq_len,
+            self.head_dim,
+        )
+        return "\n".join(
+            f"- {name}_ptr: float32 tensor with shape {shape}"
+            for name in ("q", "k", "v", "output")
+        )
+
     def forward_triton(
         self,
         inputs: tuple[torch.Tensor, torch.Tensor, torch.Tensor],

@@ -34,6 +34,13 @@ class RMSNormKernel(TritonPTXKernel):
             torch.randn(self.size, device="cuda", dtype=torch.float32),
         )
 
+    def get_shape_information(self) -> str:
+        return (
+            f"- x_ptr: float32 tensor with shape ({self.size},)\n"
+            f"- weight_ptr: float32 tensor with shape ({self.size},)\n"
+            f"- output_ptr: float32 tensor with shape ({self.size},)"
+        )
+
     def forward_triton(self, inputs, ptx=False):
         x, weight = inputs
         output = torch.empty_like(x)

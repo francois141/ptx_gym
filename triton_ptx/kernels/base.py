@@ -52,6 +52,11 @@ class TritonPTXKernel(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def get_shape_information(self) -> str:
+        """Describe the dtype and shape of every pointer kernel argument."""
+        raise NotImplementedError
+
+    @abstractmethod
     def forward_triton(self, inputs, ptx: bool = False):
         raise NotImplementedError
 

@@ -43,6 +43,7 @@ class KernelSpec:
     kernel_name: str
     source: str
     parameters: tuple[KernelParameter, ...]
+    shape_information: str
     constexpr_values: dict[str, object] = field(default_factory=dict)
     num_warps: int = 4
 
@@ -131,12 +132,23 @@ def extract_specification_from_operator(operator: object) -> KernelSpec:
 
     constexpr_values = getattr(operator, "constexpr_values", None)
     num_warps = getattr(operator, "num_warps", None)
+    get_shape_information = getattr(operator, "get_shape_information", None)
+    if not callable(get_shape_information):
+        raise TypeError(
+            f"Operator {operator_cls.__name__} has no callable get_shape_information"
+        )
+    shape_information = get_shape_information()
+    if not isinstance(shape_information, str) or not shape_information.strip():
+        raise ValueError(
+            f"Operator {operator_cls.__name__} returned invalid shape information"
+        )
 
     return KernelSpec(
         operator_name=operator_cls.__name__,
         kernel_name=kernel_name,
         source=kernel_source,
         parameters=parameters,
+        shape_information=shape_information.strip(),
         constexpr_values=(
             dict(constexpr_values) if isinstance(constexpr_values, dict) else {}
         ),

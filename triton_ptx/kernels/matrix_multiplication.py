@@ -63,6 +63,12 @@ class MatrixMultiplicationKernel(TritonPTXKernel):
         c = torch.empty((4096, 4096), device=a.device, dtype=torch.float32)
         return a, b, c
 
+    def get_shape_information(self) -> str:
+        return "\n".join(
+            f"- {name}_ptr: float32 tensor with shape (4096, 4096)"
+            for name in ("a", "b", "c")
+        )
+
     def forward_triton(self, inputs, ptx=False):
         a, b, c = inputs
        
