@@ -3,8 +3,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
-import torch
-
 from triton_ptx.helpers.kernels import get_ptx_code, has_ptx_code
 from triton_ptx.helpers.triton import jit_fixed_parameters
 
@@ -42,10 +40,6 @@ class TritonPTXKernel(ABC):
     @abstractmethod
     def kernel(*args, **kwargs):
         raise NotImplementedError
-
-    @staticmethod
-    def _rand_1d(size, *, dtype=torch.float32):
-        return torch.rand(size, device="cuda", dtype=dtype)
 
     @abstractmethod
     def get_random_input(self):

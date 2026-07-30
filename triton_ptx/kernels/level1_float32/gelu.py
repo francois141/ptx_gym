@@ -28,7 +28,7 @@ class GELUKernel(TritonPTXKernel):
         )
 
     def get_random_input(self):
-        return self._rand_1d(self.size)
+        return torch.rand(self.size, device="cuda", dtype=torch.float32)
 
     def get_shape_information(self) -> str:
         return (

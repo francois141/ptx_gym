@@ -1,16 +1,31 @@
-from .dot_product_attention import DotProductAttentionKernel
-from .gelu import GELUKernel
-from .matrix_multiplication import MatrixMultiplicationKernel
-from .matrix_multiplication_float16 import MatrixMultiplicationFloat16
-from .relu import ReLUKernel
-from .rms_norm import RMSNormKernel
-from .silu import SiLUKernel
-from .softmax import SoftmaxKernel
-from .swiglu import SwiGLUKernel
+from .level1_float32 import (
+    DotProductAttentionKernel,
+    GELUKernel,
+    MatrixMultiplicationKernel,
+    ReLUKernel,
+    RMSNormKernel,
+    SiLUKernel,
+    SoftmaxKernel,
+    SwiGLUKernel,
+)
+from .level2_float16 import (
+    DotProductAttentionFloat16Kernel,
+    GELUFloat16Kernel,
+    MatrixMultiplicationFloat16Kernel,
+    ReLUFloat16Kernel,
+    RMSNormFloat16Kernel,
+    SiLUFloat16Kernel,
+    SoftmaxFloat16Kernel,
+    SwiGLUFloat16Kernel,
+)
+
+MatrixMultiplicationFloat16 = MatrixMultiplicationFloat16Kernel
 
 
 def available_kernels() -> dict[str, type]:
-    return {operator.__name__: operator for operator in kernel_list}
+    kernels = {operator.__name__: operator for operator in kernel_list}
+    kernels["MatrixMultiplicationFloat16"] = MatrixMultiplicationFloat16
+    return kernels
 
 
 def resolve_kernel(name: str) -> type:
@@ -21,10 +36,9 @@ def resolve_kernel(name: str) -> type:
     return kernels[name]
 
 
-kernel_list = [
+level1_float32_kernel_list = [
     DotProductAttentionKernel,
     GELUKernel,
-    MatrixMultiplicationFloat16,
     MatrixMultiplicationKernel,
     ReLUKernel,
     RMSNormKernel,
@@ -32,3 +46,16 @@ kernel_list = [
     SoftmaxKernel,
     SwiGLUKernel,
 ]
+
+level2_float16_kernel_list = [
+    DotProductAttentionFloat16Kernel,
+    GELUFloat16Kernel,
+    MatrixMultiplicationFloat16Kernel,
+    ReLUFloat16Kernel,
+    RMSNormFloat16Kernel,
+    SiLUFloat16Kernel,
+    SoftmaxFloat16Kernel,
+    SwiGLUFloat16Kernel,
+]
+
+kernel_list = level1_float32_kernel_list + level2_float16_kernel_list
