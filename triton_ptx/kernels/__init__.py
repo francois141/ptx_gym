@@ -3,6 +3,10 @@ from .gelu import GELUKernel
 from .matrix_multiplication import MatrixMultiplicationKernel
 from .matrix_multiplication_float16 import MatrixMultiplicationFloat16
 from .relu import ReLUKernel
+from .rms_norm import RMSNormKernel
+from .silu import SiLUKernel
+from .softmax import SoftmaxKernel
+from .swiglu import SwiGLUKernel
 
 
 def available_kernels() -> dict[str, type]:
@@ -23,4 +27,8 @@ kernel_list = [
     MatrixMultiplicationFloat16,
     MatrixMultiplicationKernel,
     ReLUKernel,
+    RMSNormKernel,
+    SiLUKernel,
+    SoftmaxKernel,
+    SwiGLUKernel,
 ]
