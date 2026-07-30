@@ -9,6 +9,7 @@ import os
 
 import triton
 import triton.language as tl
+import torch
 from triton.compiler.compiler import CompiledKernel
 
 
@@ -67,7 +68,7 @@ def extract_ptx(
     return ptx if isinstance(ptx, str) else None
 
 
-def dump_kernel_ptx(kernel):
+def dump_kernel_ptx(kernel, inputs=None):
     """Compile a kernel with randomized inputs and return its generated PTX.
 
     Args:
@@ -77,8 +78,9 @@ def dump_kernel_ptx(kernel):
     Returns:
         The PTX emitted by Triton for the compiled kernel, if available.
     """
-    inputs = kernel.get_random_input()
-    _, compiled_kernel = kernel.forward_triton(inputs)
+    inputs = kernel.get_random_input() if inputs is None else inputs
+    with torch.no_grad():
+        _, compiled_kernel = kernel.forward_triton(inputs)
     return extract_ptx(compiled_kernel)
 
 

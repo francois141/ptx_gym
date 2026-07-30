@@ -31,6 +31,12 @@ def available_kernels() -> dict[str, type]:
 def resolve_kernel(name: str) -> type:
     kernels = available_kernels()
     if name not in kernels:
+        from triton_ptx.LLMs.apertus.model import APERTUS_KERNEL_CLASSES
+
+        kernels.update(
+            {kernel.__name__: kernel for kernel in APERTUS_KERNEL_CLASSES.values()}
+        )
+    if name not in kernels:
         available = ", ".join(sorted(kernels))
         raise ValueError(f"Unknown kernel {name!r}. Available kernels: {available}")
     return kernels[name]

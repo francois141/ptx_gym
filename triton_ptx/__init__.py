@@ -1,6 +1,9 @@
 """Public API for Triton PTX utilities."""
 
+import os
 from importlib import import_module
+
+os.environ.setdefault("TRITON_BACKENDS_IN_TREE", "1")
 
 _EXPORTS = {
     "CompilationResult": "triton_ptx.evaluation.compilation",
@@ -31,7 +34,7 @@ _EXPORTS = {
     "run_ptx_compilation": "triton_ptx.evaluation.compilation",
 }
 
-__all__ = sorted(_EXPORTS)
+__all__ = [name for name in sorted(_EXPORTS)]
 
 
 def __getattr__(name: str):
