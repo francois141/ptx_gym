@@ -17,6 +17,7 @@ class SiLUFloat16Kernel(TritonPTXKernel):
     def kernel(x_ptr, output_ptr, BLOCK_SIZE: tl.constexpr):
         offsets = tl.program_id(axis=0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
         values = tl.load(x_ptr + offsets)
+        values = values.to(tl.float32)
         tl.store(output_ptr + offsets, values / (1.0 + tl.exp(-values)))
 
     def get_random_input(self):

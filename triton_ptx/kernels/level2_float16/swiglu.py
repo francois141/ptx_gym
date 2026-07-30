@@ -17,6 +17,8 @@ class SwiGLUFloat16Kernel(TritonPTXKernel):
         offsets = tl.arange(0, BLOCK_SIZE)
         gate = tl.load(gate_ptr + offsets)
         value = tl.load(value_ptr + offsets)
+        gate = gate.to(tl.float32)
+        value = value.to(tl.float32)
         tl.store(output_ptr + offsets, gate / (1.0 + tl.exp(-gate)) * value)
 
     def get_random_input(self):
