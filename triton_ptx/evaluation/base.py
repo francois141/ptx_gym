@@ -18,6 +18,7 @@ class BaseCandidateEvaluator(ABC):
         operator_cls: type[TritonPTXKernel],
     ) -> None:
         self.operator_cls = operator_cls
+        self.operator = operator_cls()
         self.kernel_name = operator_cls.__name__
         self.git_commit_hash = resolve_git_commit_hash()
 

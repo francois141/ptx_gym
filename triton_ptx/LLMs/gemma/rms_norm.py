@@ -9,10 +9,10 @@ from triton_ptx.kernels.base import TritonPTXKernel
 class GemmaRMSNormKernel(TritonPTXKernel):
     """Gemma's RMS normalization kernel."""
 
-    def __init__(self, *, block_size=128, num_warps=4, ptx=None):
-        self.block_size = block_size
-        self.num_warps = num_warps
-        self.constexpr_values = {"BLOCK_SIZE": block_size}
+    def __init__(self, *, ptx=None):
+        self.block_size = 128
+        self.num_warps = 4
+        self.constexpr_values = {"BLOCK_SIZE": self.block_size}
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
@@ -45,7 +45,7 @@ class GemmaRMSNormKernel(TritonPTXKernel):
                 output_ptr + row_offset + block_offset + offsets, normalized * weights
             )
 
-    def get_random_input(self):
+    def get_random_input(self, fixed: bool = False):
         return (
             torch.rand((1, 2560), device="cuda", dtype=torch.bfloat16),
             torch.rand(2560, device="cuda", dtype=torch.bfloat16),

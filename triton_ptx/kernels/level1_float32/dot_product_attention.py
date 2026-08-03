@@ -13,7 +13,6 @@ class DotProductAttentionKernel(TritonPTXKernel):
     def __init__(
         self,
         *,
-        num_warps: int = 4,
         ptx: object | None = None,
     ) -> None:
         self.batch_size = 8
@@ -28,7 +27,7 @@ class DotProductAttentionKernel(TritonPTXKernel):
             "BLOCK_SEQ": self.block_seq,
             "BLOCK_DIM": self.block_dim,
         }
-        self.num_warps = num_warps
+        self.num_warps = 4
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
@@ -83,7 +82,9 @@ class DotProductAttentionKernel(TritonPTXKernel):
         )
         tl.store(output_base + dim_offsets, output)
 
-    def get_random_input(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def get_random_input(
+        self, fixed: bool = False
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Create random query, key, and value tensors."""
         shape = (self.batch_size, self.num_heads, self.seq_len, self.head_dim)
         return (

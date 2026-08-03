@@ -6,11 +6,11 @@ from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class RoPEKernel(TritonPTXKernel):
-    def __init__(self, *, block_size=128, num_warps=4, ptx=None):
-        self.block_size = block_size
-        self.num_warps = num_warps
-        self.constexpr_values = {"BLOCK_SIZE": block_size}
-        self.init_compiled_kernels(ptx=ptx)
+    def __init__(self, *, ptx=None):
+        self.block_size = 128
+        self.num_warps = 4
+        self.constexpr_values = {"BLOCK_SIZE": self.block_size}
+        self.init_compiled_kernels(ptx=ptx, autotune=True)
 
     @staticmethod
     def kernel(
@@ -44,7 +44,7 @@ class RoPEKernel(TritonPTXKernel):
             values * cos_values + rotated_values * sin_values,
         )
 
-    def get_random_input(self):
+    def get_random_input(self, fixed: bool = False):
         hidden_states = torch.rand((1, 1, 16, 128), device="cuda", dtype=torch.float16)
         frequencies = torch.rand((16, 128), device="cuda", dtype=torch.float16)
         return hidden_states, frequencies, frequencies.clone()

@@ -95,7 +95,8 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
             )
 
         try:
-            operator = self.operator_cls(ptx=launch_payload)
+            self.operator.set_ptx(launch_payload)
+            operator = self.operator
             verifier = OutputVerifier()
             correct = verifier.verify(operator)
             verifier_report = getattr(verifier, "last_report", {})

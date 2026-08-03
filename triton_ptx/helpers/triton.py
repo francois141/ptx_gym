@@ -84,6 +84,17 @@ def dump_kernel_ptx(kernel, inputs=None):
     return extract_ptx(compiled_kernel)
 
 
+def dump_kernel_assembly(kernel, inputs=None):
+    inputs = kernel.get_random_input() if inputs is None else inputs
+    with torch.no_grad():
+        _, compiled_kernel = kernel.forward_triton(inputs)
+    return {
+        stage: source
+        for stage, source in compiled_kernel.asm.items()
+        if isinstance(source, str)
+    }
+
+
 def jit_fixed_parameters(fn=None, **triton_kwargs):
     """Wrap ``triton.jit`` while preserving non-``tl.constexpr`` parameters.
 

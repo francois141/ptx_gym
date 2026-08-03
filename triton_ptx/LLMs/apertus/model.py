@@ -12,7 +12,7 @@ from transformers import AutoTokenizer
 from ..llm import LLM
 from .causal_attention import CausalAttentionKernel
 from .linear import LinearKernel
-from .rms_norm import ApertusRMSNormKernel
+from .rms_norm import ApertusRMSNorm128Kernel, ApertusRMSNorm4096Kernel
 from .rope import RoPEKernel
 from .xielu import XIELUKernel
 
@@ -45,7 +45,8 @@ ATTENTION_BLOCK_N = 64
 APERTUS_KERNEL_CLASSES = {
     "causal_attention": CausalAttentionKernel,
     "linear": LinearKernel,
-    "rms_norm": ApertusRMSNormKernel,
+    "rms_norm_128": ApertusRMSNorm128Kernel,
+    "rms_norm_4096": ApertusRMSNorm4096Kernel,
     "rope": RoPEKernel,
     "xielu": XIELUKernel,
 }
@@ -59,7 +60,8 @@ class ApertusKernelSet:
         *,
         causal_attention_payload=None,
         linear_payload=None,
-        rms_norm_payload=None,
+        rms_norm_128_payload=None,
+        rms_norm_4096_payload=None,
         rope_payload=None,
         xielu_payload=None,
     ):
@@ -67,7 +69,8 @@ class ApertusKernelSet:
             causal_attention_payload
         )
         self.linear_payload = self.normalize_payload(linear_payload)
-        self.rms_norm_payload = self.normalize_payload(rms_norm_payload)
+        self.rms_norm_128_payload = self.normalize_payload(rms_norm_128_payload)
+        self.rms_norm_4096_payload = self.normalize_payload(rms_norm_4096_payload)
         self.rope_payload = self.normalize_payload(rope_payload)
         self.xielu_payload = self.normalize_payload(xielu_payload)
 
@@ -75,7 +78,12 @@ class ApertusKernelSet:
             ptx=self.causal_attention_payload
         )
         self.linear = LinearKernel(ptx=self.linear_payload)
-        self.rms_norm = ApertusRMSNormKernel(ptx=self.rms_norm_payload)
+        self.rms_norm_128 = ApertusRMSNorm128Kernel(
+            ptx=self.rms_norm_128_payload
+        )
+        self.rms_norm_4096 = ApertusRMSNorm4096Kernel(
+            ptx=self.rms_norm_4096_payload
+        )
         self.rope = RoPEKernel(ptx=self.rope_payload)
         self.xielu = XIELUKernel(ptx=self.xielu_payload)
 
@@ -99,7 +107,17 @@ class Apertus1p5TextRMSNorm(torch.nn.Module):
             torch.ones(hidden_size, device=device, dtype=dtype)
         )
         self.eps = eps
-        self.kernel = (kernels or ApertusKernelSet()).rms_norm
+        kernel_set = kernels or ApertusKernelSet()
+        rms_norm_kernels = {
+            HEAD_DIM: kernel_set.rms_norm_128,
+            HIDDEN_SIZE: kernel_set.rms_norm_4096,
+        }
+        try:
+            self.kernel = rms_norm_kernels[hidden_size]
+        except KeyError as error:
+            raise ValueError(
+                f"Apertus does not provide an RMSNorm kernel for {hidden_size}."
+            ) from error
 
     def forward(self, hidden_states):
         output, _ = self.kernel.forward_triton(
@@ -362,7 +380,8 @@ class ApertusLLM(LLM):
         *,
         causal_attention_payload=None,
         linear_payload=None,
-        rms_norm_payload=None,
+        rms_norm_128_payload=None,
+        rms_norm_4096_payload=None,
         rope_payload=None,
         xielu_payload=None,
     ):
@@ -370,7 +389,8 @@ class ApertusLLM(LLM):
         self.kernels = ApertusKernelSet(
             causal_attention_payload=causal_attention_payload,
             linear_payload=linear_payload,
-            rms_norm_payload=rms_norm_payload,
+            rms_norm_128_payload=rms_norm_128_payload,
+            rms_norm_4096_payload=rms_norm_4096_payload,
             rope_payload=rope_payload,
             xielu_payload=xielu_payload,
         )
@@ -386,7 +406,8 @@ class ApertusLLM(LLM):
         *,
         causal_attention_payload=None,
         linear_payload=None,
-        rms_norm_payload=None,
+        rms_norm_128_payload=None,
+        rms_norm_4096_payload=None,
         rope_payload=None,
         xielu_payload=None,
     ):
@@ -394,7 +415,8 @@ class ApertusLLM(LLM):
         return cls(
             causal_attention_payload=causal_attention_payload,
             linear_payload=linear_payload,
-            rms_norm_payload=rms_norm_payload,
+            rms_norm_128_payload=rms_norm_128_payload,
+            rms_norm_4096_payload=rms_norm_4096_payload,
             rope_payload=rope_payload,
             xielu_payload=xielu_payload,
         )

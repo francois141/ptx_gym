@@ -13,12 +13,12 @@ KERNEL_HEAD_DIM = tl.constexpr(HEAD_DIM)
 
 
 class CausalAttentionKernel(TritonPTXKernel):
-    def __init__(self, *, block_m=32, block_n=64, num_warps=4, ptx=None):
-        self.block_m = block_m
-        self.block_n = block_n
-        self.num_warps = num_warps
-        self.constexpr_values = {"BLOCK_M": block_m, "BLOCK_N": block_n}
-        self.init_compiled_kernels(ptx=ptx)
+    def __init__(self, *, ptx=None):
+        self.block_m = 32
+        self.block_n = 64
+        self.num_warps = 4
+        self.constexpr_values = {"BLOCK_M": self.block_m, "BLOCK_N": self.block_n}
+        self.init_compiled_kernels(ptx=ptx, autotune=True)
 
     @staticmethod
     def kernel(
@@ -91,7 +91,7 @@ class CausalAttentionKernel(TritonPTXKernel):
             mask=query_mask[:, None],
         )
 
-    def get_random_input(self):
+    def get_random_input(self, fixed: bool = False):
         return tuple(
             torch.rand(
                 (INFERENCE_BATCH_SIZE, INFERENCE_NUM_ATTENTION_HEADS, 38, HEAD_DIM),

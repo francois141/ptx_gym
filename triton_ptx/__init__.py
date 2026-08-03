@@ -8,6 +8,7 @@ os.environ.setdefault("TRITON_BACKENDS_IN_TREE", "1")
 _EXPORTS = {
     "CompilationResult": "triton_ptx.evaluation.compilation",
     "EvaluatedCandidate": "triton_ptx.evaluation.types",
+    "KernelTuningResult": "triton_ptx.kernels.base",
     "OutputVerifier": "triton_ptx.evaluation.verification",
     "PTXSignatureParameter": "triton_ptx.helpers.ptx",
     "Payload": "triton_ptx.evaluation.types",

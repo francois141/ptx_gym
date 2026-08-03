@@ -10,7 +10,7 @@ from triton_ptx.kernels.base import TritonPTXKernel
 class DotProductAttentionFloat16Kernel(TritonPTXKernel):
     """Float16 attention whose two matrix products lower through tensor cores."""
 
-    def __init__(self, *, num_warps: int = 4, ptx: object | None = None) -> None:
+    def __init__(self, *, ptx: object | None = None) -> None:
         self.batch_size = 8
         self.num_heads = 16
         self.seq_len = 256
@@ -25,7 +25,7 @@ class DotProductAttentionFloat16Kernel(TritonPTXKernel):
             "BLOCK_SEQ": self.block_seq,
             "BLOCK_DIM": self.block_dim,
         }
-        self.num_warps = num_warps
+        self.num_warps = 4
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
@@ -88,7 +88,9 @@ class DotProductAttentionFloat16Kernel(TritonPTXKernel):
         )
         tl.store(output_base + dim_offsets[None, :], output)
 
-    def get_random_input(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def get_random_input(
+        self, fixed: bool = False
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         shape = (self.batch_size, self.num_heads, self.seq_len, self.head_dim)
         return tuple(
             torch.randn(shape, device="cuda", dtype=torch.float16)

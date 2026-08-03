@@ -5,3 +5,4 @@ omegaconf
 orjson
 pytest
 torch
+tqdm

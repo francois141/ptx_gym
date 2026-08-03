@@ -3,25 +3,22 @@
 import random
 
 import torch
-import triton
 import triton.language as tl
 from torch.nn import functional
 from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class LinearKernel(TritonPTXKernel):
-    def __init__(
-        self, *, block_n=128, block_k=32, num_warps=4, num_stages=4, ptx=None
-    ):
-        self.block_n = block_n
-        self.block_k = block_k
-        self.num_warps = num_warps
-        self.num_stages = num_stages
+    def __init__(self, *, ptx=None):
+        self.block_n = 128
+        self.block_k = 32
+        self.num_warps = 4
+        self.num_stages = 4
         self.constexpr_values = {
-            "BLOCK_N": block_n,
-            "BLOCK_K": block_k,
+            "BLOCK_N": self.block_n,
+            "BLOCK_K": self.block_k,
         }
-        self.init_compiled_kernels(ptx=ptx)
+        self.init_compiled_kernels(ptx=ptx, autotune=True)
 
     @staticmethod
     def kernel(
@@ -57,9 +54,9 @@ class LinearKernel(TritonPTXKernel):
         output_ptrs = output_ptr + vector_index * output_features + output_offsets
         tl.store(output_ptrs, accumulator.to(output_ptr.dtype.element_ty))
 
-    def get_random_input(self):
-        input_features = random.randrange(1, 5) * 1024
-        output_features = random.randrange(1, 5) * 1024
+    def get_random_input(self, fixed: bool = False):
+        input_features = 4096 * 4 if fixed else random.randrange(1, 5) * 1024
+        output_features = 4096 * 4 if fixed else random.randrange(1, 5) * 1024
         return (
             torch.rand((1, input_features), device="cuda", dtype=torch.float16),
             torch.rand(
@@ -118,7 +115,7 @@ class LinearKernel(TritonPTXKernel):
         kernel = launch_kernel[
             (
                 flattened_input.shape[0],
-                triton.cdiv(output_features, self.block_n),
+                output_features // self.block_n,
             )
         ](
             flattened_input,

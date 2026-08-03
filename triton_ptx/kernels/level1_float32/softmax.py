@@ -6,10 +6,10 @@ from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class SoftmaxKernel(TritonPTXKernel):
-    def __init__(self, *, num_warps=8, ptx=None):
+    def __init__(self, *, ptx=None):
         self.size = 4096
         self.constexpr_values = {"BLOCK_SIZE": self.size}
-        self.num_warps = num_warps
+        self.num_warps = 8
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
@@ -22,7 +22,7 @@ class SoftmaxKernel(TritonPTXKernel):
         output = numerators / tl.sum(numerators, axis=0)
         tl.store(output_ptr + offsets, output)
 
-    def get_random_input(self):
+    def get_random_input(self, fixed: bool = False):
         return torch.randn(self.size, device="cuda", dtype=torch.float32)
 
     def get_shape_information(self) -> str:

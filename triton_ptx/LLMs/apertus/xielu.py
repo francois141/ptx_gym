@@ -7,11 +7,11 @@ from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class XIELUKernel(TritonPTXKernel):
-    def __init__(self, *, block_size=1024, num_warps=4, ptx=None):
-        self.block_size = block_size
-        self.num_warps = num_warps
-        self.constexpr_values = {"BLOCK_SIZE": block_size}
-        self.init_compiled_kernels(ptx=ptx)
+    def __init__(self, *, ptx=None):
+        self.block_size = 1024
+        self.num_warps = 4
+        self.constexpr_values = {"BLOCK_SIZE": self.block_size}
+        self.init_compiled_kernels(ptx=ptx, autotune=True)
 
     @staticmethod
     def kernel(
@@ -37,9 +37,9 @@ class XIELUKernel(TritonPTXKernel):
         negative += beta * values
         tl.store(output_ptr + offsets, tl.where(values > 0.0, positive, negative))
 
-    def get_random_input(self):
+    def get_random_input(self, fixed: bool = False):
         return tuple(
-            torch.rand(32*4096, device="cuda", dtype=torch.float16)
+            torch.rand(4096, device="cuda", dtype=torch.float16)
             if index == 0
             else torch.rand(1, device="cuda", dtype=torch.float16)
             for index in range(5)

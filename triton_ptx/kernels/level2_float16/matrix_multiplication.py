@@ -8,16 +8,16 @@ from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class MatrixMultiplicationFloat16(TritonPTXKernel):
-    def __init__(self, *, block_m=128, block_n=128, block_k=32, num_warps=4, ptx=None):
-        self.block_m = block_m
-        self.block_n = block_n
-        self.block_k = block_k
+    def __init__(self, *, ptx=None):
+        self.block_m = 128
+        self.block_n = 128
+        self.block_k = 32
         self.constexpr_values = {
-            "BLOCK_M": block_m,
-            "BLOCK_N": block_n,
-            "BLOCK_K": block_k,
+            "BLOCK_M": self.block_m,
+            "BLOCK_N": self.block_n,
+            "BLOCK_K": self.block_k,
         }
-        self.num_warps = num_warps
+        self.num_warps = 4
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
@@ -55,7 +55,7 @@ class MatrixMultiplicationFloat16(TritonPTXKernel):
         c_ptrs = c_ptr + offs_m[:, None] * stride_cm + offs_n[None, :]
         tl.store(c_ptrs, c)
 
-    def get_random_input(self):
+    def get_random_input(self, fixed: bool = False):
         a = torch.randn((4096, 4096), device="cuda", dtype=torch.float16)
         b = torch.randn((4096, 4096), device="cuda", dtype=torch.float16)
         c = torch.empty((4096, 4096), device=a.device, dtype=a.dtype)

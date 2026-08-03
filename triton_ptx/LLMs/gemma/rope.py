@@ -9,10 +9,10 @@ from triton_ptx.kernels.base import TritonPTXKernel
 class GemmaRoPEKernel(TritonPTXKernel):
     """Gemma local-attention rotary-position-embedding kernel."""
 
-    def __init__(self, *, block_size=256, num_warps=4, ptx=None):
-        self.block_size = block_size
-        self.num_warps = num_warps
-        self.constexpr_values = {"BLOCK_SIZE": block_size}
+    def __init__(self, *, ptx=None):
+        self.block_size = 256
+        self.num_warps = 4
+        self.constexpr_values = {"BLOCK_SIZE": self.block_size}
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
@@ -47,7 +47,7 @@ class GemmaRoPEKernel(TritonPTXKernel):
             values * cos_values + rotated_values * sin_values,
         )
 
-    def get_random_input(self):
+    def get_random_input(self, fixed: bool = False):
         hidden_states = torch.rand(
             (1, 1, 16, 256), device="cuda", dtype=torch.bfloat16
         )

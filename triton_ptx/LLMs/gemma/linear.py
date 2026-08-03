@@ -11,19 +11,16 @@ from triton_ptx.kernels.base import TritonPTXKernel
 class GemmaLinearKernel(TritonPTXKernel):
     """Gemma's bias-free linear projection kernel."""
 
-    def __init__(
-        self, *, block_m=1, block_n=128, block_k=32, num_warps=4, num_stages=4,
-        ptx=None
-    ):
-        self.block_m = block_m
-        self.block_n = block_n
-        self.block_k = block_k
-        self.num_warps = num_warps
-        self.num_stages = num_stages
+    def __init__(self, *, ptx=None):
+        self.block_m = 1
+        self.block_n = 128
+        self.block_k = 32
+        self.num_warps = 4
+        self.num_stages = 4
         self.constexpr_values = {
-            "BLOCK_M": block_m,
-            "BLOCK_N": block_n,
-            "BLOCK_K": block_k,
+            "BLOCK_M": self.block_m,
+            "BLOCK_N": self.block_n,
+            "BLOCK_K": self.block_k,
         }
         self.init_compiled_kernels(ptx=ptx)
 
@@ -70,7 +67,7 @@ class GemmaLinearKernel(TritonPTXKernel):
         )
         tl.store(output_ptrs, accumulator.to(output_ptr.dtype.element_ty))
 
-    def get_random_input(self):
+    def get_random_input(self, fixed: bool = False):
         return (
             torch.rand((1, 2560), device="cuda", dtype=torch.bfloat16),
             torch.rand((2560, 2560), device="cuda", dtype=torch.bfloat16),

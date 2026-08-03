@@ -6,11 +6,11 @@ from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class RMSNormKernel(TritonPTXKernel):
-    def __init__(self, *, num_warps=8, eps=1e-6, ptx=None):
+    def __init__(self, *, eps=1e-6, ptx=None):
         self.size = 4096
         self.eps = eps
         self.constexpr_values = {"BLOCK_SIZE": self.size, "EPS": eps}
-        self.num_warps = num_warps
+        self.num_warps = 8
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
@@ -28,7 +28,7 @@ class RMSNormKernel(TritonPTXKernel):
         inverse_rms = tl.rsqrt(tl.sum(values * values, axis=0) / BLOCK_SIZE + EPS)
         tl.store(output_ptr + offsets, values * inverse_rms * weight)
 
-    def get_random_input(self):
+    def get_random_input(self, fixed: bool = False):
         return (
             torch.randn(self.size, device="cuda", dtype=torch.float32),
             torch.randn(self.size, device="cuda", dtype=torch.float32),

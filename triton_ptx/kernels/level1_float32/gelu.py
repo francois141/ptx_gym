@@ -6,13 +6,12 @@ from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class GELUKernel(TritonPTXKernel):
-    def __init__(self, block_size=1024, num_warps=4, ptx=None):
-        self.block_size = block_size
-        self.constexpr_values = {"BLOCK_SIZE": block_size}
-        self.num_warps = num_warps
-        self.init_compiled_kernels(ptx=ptx)
-
+    def __init__(self, *, ptx=None):
+        self.block_size = 1024
         self.size = 4096
+        self.constexpr_values = {"BLOCK_SIZE": self.block_size}
+        self.num_warps = 4
+        self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
     def kernel(x_ptr, output_ptr, n_elements: tl.constexpr, BLOCK_SIZE: tl.constexpr):
@@ -27,7 +26,7 @@ class GELUKernel(TritonPTXKernel):
             output_ptr + offsets, output.to(output_ptr.dtype.element_ty)
         )
 
-    def get_random_input(self):
+    def get_random_input(self, fixed: bool = False):
         return torch.rand(self.size, device="cuda", dtype=torch.float32)
 
     def get_shape_information(self) -> str:
