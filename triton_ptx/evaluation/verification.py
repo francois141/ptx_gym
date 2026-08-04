@@ -60,6 +60,19 @@ class OutputVerifier(BaseVerifier):
                 f"({self.max_video_memory_fraction:.0%} of available video memory)"
             )
 
+    def _clone_inputs(self, inputs):
+        if isinstance(inputs, torch.Tensor):
+            return inputs.clone()
+        if isinstance(inputs, tuple):
+            return tuple(self._clone_inputs(value) for value in inputs)
+        if isinstance(inputs, list):
+            return [self._clone_inputs(value) for value in inputs]
+        if isinstance(inputs, dict):
+            return {
+                key: self._clone_inputs(value) for key, value in inputs.items()
+            }
+        return inputs
+
     def _same(self, actual, expected):
         if isinstance(actual, torch.Tensor) and isinstance(expected, torch.Tensor):
             return actual.shape == expected.shape and torch.allclose(
@@ -195,14 +208,28 @@ class OutputVerifier(BaseVerifier):
 
             self._assert_input_limits(inputs)
 
-            triton_out, _ = op.forward_triton(inputs)
-            ptx_out, _ = op.forward_triton(inputs, ptx=True)
+            torch_out = op.forward_torch(inputs)
+            triton_out, _ = op.forward_triton(self._clone_inputs(inputs))
+            ptx_out, _ = op.forward_triton(self._clone_inputs(inputs), ptx=True)
 
-            if not self._same(ptx_out, triton_out):
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+
+            if not self._same(triton_out, torch_out):
                 self.last_report = self._failure_report(
                     iteration,
                     triton_out,
+                    torch_out,
+                    expected_name="torch",
+                )
+                return False
+
+            if not self._same(ptx_out, torch_out):
+                self.last_report = self._failure_report(
+                    iteration,
                     ptx_out,
+                    torch_out,
+                    expected_name="torch",
                 )
                 return False
 
