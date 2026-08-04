@@ -13,6 +13,10 @@ class MatrixMultiplicationFloat16(TritonPTXKernel):
         self.block_n = 128
         self.block_k = 32
         self.constexpr_values = {
+            "stride_am": 4096,
+            "stride_bk": 4096,
+            "stride_cm": 4096,
+            "k_dim": 4096,
             "BLOCK_M": self.block_m,
             "BLOCK_N": self.block_n,
             "BLOCK_K": self.block_k,

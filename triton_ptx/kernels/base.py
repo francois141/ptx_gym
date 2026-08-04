@@ -48,19 +48,26 @@ class TritonPTXKernel(ABC):
         ``best_config`` and returned to the caller.
         """
         self.ptx = ptx
+        has_fixed_tuning_config = False
         if isinstance(ptx, Mapping):
             tuning_config = ptx.get("tuning_config")
             if tuning_config is not None:
                 if not isinstance(tuning_config, Mapping):
                     raise TypeError("PTX tuning_config must be a mapping.")
                 self._apply_tuning_config(tuning_config)
+                has_fixed_tuning_config = True
         self.compiled_kernel = jit_fixed_parameters(self.kernel)
         self.compiled_kernel_ptx = None
         if has_ptx_code(ptx):
             self.compiled_kernel_ptx = jit_fixed_parameters(
                 self.kernel, ptx=get_ptx_code(ptx)
             )
-        if not autotune or has_ptx_code(ptx) or not torch.cuda.is_available():
+        if (
+            not autotune
+            or has_fixed_tuning_config
+            or has_ptx_code(ptx)
+            or not torch.cuda.is_available()
+        ):
             self.best_config = self._current_tuning_config()
             self.tuning_result = None
             return None
@@ -144,7 +151,7 @@ class TritonPTXKernel(ABC):
         for _ in range(5):
             self.forward_triton(inputs)
         torch.cuda.synchronize()
-        return (perf_counter() - start) * 10.0
+        return (perf_counter() - start) * 200.0
 
     def _tuning_candidates(
         self, tuning_options: Mapping[str, tuple[int, ...]] | None
