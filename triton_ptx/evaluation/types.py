@@ -96,6 +96,22 @@ def _json_safe(value: Any) -> Any:
         return str(value)
 
 
+def _llm_lines(value: Any, prefix: str = "") -> list[str]:
+    if isinstance(value, dict):
+        return [
+            line
+            for key, item in value.items()
+            for line in _llm_lines(item, f"{prefix}.{key}" if prefix else str(key))
+        ]
+
+    serialized_value = (
+        value
+        if isinstance(value, str)
+        else json.dumps(_json_safe(value), ensure_ascii=False)
+    )
+    return [f"{prefix}: {serialized_value}"]
+
+
 @dataclass(frozen=True)
 class Timing:
     p20: float
@@ -241,3 +257,36 @@ class EvaluatedCandidate:
             indent=indent,
             ensure_ascii=False,
         )
+
+    def to_llm(self) -> str:
+        """Return evaluation feedback relevant to improving a candidate."""
+        data = self.to_dict()
+        for field_name in ("kernel_name", "git_commit_hash", "payload"):
+            data.pop(field_name, None)
+
+        if self.compiles:
+            data.pop("compile_output", None)
+            data.pop("compile_error", None)
+
+        if self.passed:
+            data.pop("sanitizer_report", None)
+            data.pop("verifier_report", None)
+
+        ncu_report = data.pop("ncu_report", {})
+        if isinstance(ncu_report, dict):
+            for section in ("derived", "summary"):
+                if ncu_report.get(section):
+                    data[section] = ncu_report[section]
+
+            ncu_status = {
+                key: ncu_report[key]
+                for key in ("available", "return_code", "error")
+                if ncu_report.get(key) not in (None, "", 0, True)
+            }
+            if ncu_status:
+                data["ncu_report"] = ncu_status
+
+        data = {
+            key: value for key, value in data.items() if value not in (None, "", {}, [])
+        }
+        return "\n".join(_llm_lines(data))
