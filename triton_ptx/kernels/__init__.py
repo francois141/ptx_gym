@@ -33,12 +33,16 @@ def resolve_kernel(name: str) -> type:
     if name not in kernels:
         from triton_ptx.LLMs.apertus.model import APERTUS_KERNEL_CLASSES
         from triton_ptx.LLMs.gemma.model import GEMMA_KERNEL_CLASSES
+        from triton_ptx.LLMs.qwen.model import QWEN_KERNEL_CLASSES
 
         kernels.update(
             {kernel.__name__: kernel for kernel in APERTUS_KERNEL_CLASSES.values()}
         )
         kernels.update(
             {kernel.__name__: kernel for kernel in GEMMA_KERNEL_CLASSES.values()}
+        )
+        kernels.update(
+            {kernel.__name__: kernel for kernel in QWEN_KERNEL_CLASSES.values()}
         )
     if name not in kernels:
         available = ", ".join(sorted(kernels))
