@@ -21,7 +21,21 @@ class DotProductAttentionKernel(TritonPTXKernel):
         self.head_dim = 64
         self.block_seq = 256
         self.block_dim = 64
+        self.stride_batch = self.num_heads * self.seq_len * self.head_dim
+        self.stride_head = self.seq_len * self.head_dim
         self.constexpr_values = {
+            "stride_qb": self.stride_batch,
+            "stride_qh": self.stride_head,
+            "stride_qs": self.head_dim,
+            "stride_kb": self.stride_batch,
+            "stride_kh": self.stride_head,
+            "stride_ks": self.head_dim,
+            "stride_vb": self.stride_batch,
+            "stride_vh": self.stride_head,
+            "stride_vs": self.head_dim,
+            "stride_ob": self.stride_batch,
+            "stride_oh": self.stride_head,
+            "stride_os": self.head_dim,
             "SEQ_LEN": self.seq_len,
             "HEAD_DIM": self.head_dim,
             "BLOCK_SEQ": self.block_seq,

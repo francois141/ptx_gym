@@ -9,7 +9,10 @@ class GELUKernel(TritonPTXKernel):
     def __init__(self, *, ptx=None):
         self.block_size = 1024
         self.size = 4096
-        self.constexpr_values = {"BLOCK_SIZE": self.block_size}
+        self.constexpr_values = {
+            "n_elements": self.size,
+            "BLOCK_SIZE": self.block_size,
+        }
         self.num_warps = 4
         self.init_compiled_kernels(ptx=ptx)
 
@@ -22,9 +25,7 @@ class GELUKernel(TritonPTXKernel):
         x32 = x.to(tl.float32)
         inv_sqrt2 = 0.7071067811865476
         output = 0.5 * x32 * (1.0 + tl.math.erf(x32 * inv_sqrt2))
-        tl.store(
-            output_ptr + offsets, output.to(output_ptr.dtype.element_ty)
-        )
+        tl.store(output_ptr + offsets, output.to(output_ptr.dtype.element_ty))
 
     def get_random_input(self, fixed: bool = False):
         return torch.rand(self.size, device="cuda", dtype=torch.float32)

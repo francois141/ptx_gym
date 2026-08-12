@@ -18,7 +18,21 @@ class DotProductAttentionFloat16Kernel(TritonPTXKernel):
         self.block_rows = 16
         self.block_seq = 256
         self.block_dim = 64
+        self.stride_batch = self.num_heads * self.seq_len * self.head_dim
+        self.stride_head = self.seq_len * self.head_dim
         self.constexpr_values = {
+            "stride_qb": self.stride_batch,
+            "stride_qh": self.stride_head,
+            "stride_qs": self.head_dim,
+            "stride_kb": self.stride_batch,
+            "stride_kh": self.stride_head,
+            "stride_ks": self.head_dim,
+            "stride_vb": self.stride_batch,
+            "stride_vh": self.stride_head,
+            "stride_vs": self.head_dim,
+            "stride_ob": self.stride_batch,
+            "stride_oh": self.stride_head,
+            "stride_os": self.head_dim,
             "SEQ_LEN": self.seq_len,
             "HEAD_DIM": self.head_dim,
             "BLOCK_ROWS": self.block_rows,
@@ -58,18 +72,11 @@ class DotProductAttentionFloat16Kernel(TritonPTXKernel):
         seq_offsets = tl.arange(0, BLOCK_SEQ)
         dim_offsets = tl.arange(0, BLOCK_DIM)
 
-        q_base = (
-            q_ptr
-            + batch * stride_qb
-            + head * stride_qh
-            + row[:, None] * stride_qs
-        )
+        q_base = q_ptr + batch * stride_qb + head * stride_qh + row[:, None] * stride_qs
         k_base = k_ptr + batch * stride_kb + head * stride_kh
         v_base = v_ptr + batch * stride_vb + head * stride_vh
         q = tl.load(q_base + dim_offsets[None, :])
-        k = tl.load(
-            k_base + seq_offsets[:, None] * stride_ks + dim_offsets[None, :]
-        )
+        k = tl.load(k_base + seq_offsets[:, None] * stride_ks + dim_offsets[None, :])
         scores = tl.dot(q, tl.trans(k), out_dtype=tl.float32)
         scores *= HEAD_DIM**-0.5
         scores -= tl.max(scores, axis=1)[:, None]
@@ -81,10 +88,7 @@ class DotProductAttentionFloat16Kernel(TritonPTXKernel):
         )
         output = tl.dot(weights.to(tl.float16), values, out_dtype=tl.float32)
         output_base = (
-            output_ptr
-            + batch * stride_ob
-            + head * stride_oh
-            + row[:, None] * stride_os
+            output_ptr + batch * stride_ob + head * stride_oh + row[:, None] * stride_os
         )
         tl.store(output_base + dim_offsets[None, :], output)
 
@@ -93,8 +97,7 @@ class DotProductAttentionFloat16Kernel(TritonPTXKernel):
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         shape = (self.batch_size, self.num_heads, self.seq_len, self.head_dim)
         return tuple(
-            torch.randn(shape, device="cuda", dtype=torch.float16)
-            for _ in range(3)
+            torch.randn(shape, device="cuda", dtype=torch.float16) for _ in range(3)
         )
 
     def get_shape_information(self) -> str:
