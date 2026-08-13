@@ -1,20 +1,23 @@
-#!/usr/bin/env python3
 from __future__ import annotations
 
-import triton
+from statistics import median
 
+import triton
 from triton_ptx.evaluation.types import Timing
 from triton_ptx.helpers.triton import clear_triton_cache
 
 
 def benchmark(fn) -> Timing:
-    p20, p50, p80, p90, p95, p99 = triton.testing.do_bench(
-        fn,
-        warmup=500,
-        rep=5000,
-        quantiles=[0.2, 0.5, 0.8, 0.9, 0.95, 0.99],
-    )
-    return Timing(p20, p50, p80, p90, p95, p99)
+    timing_rounds = [
+        triton.testing.do_bench(
+            fn,
+            warmup=200,
+            rep=2000,
+            quantiles=[0.2, 0.5, 0.8, 0.9, 0.95, 0.99],
+        )
+        for _ in range(5)
+    ]
+    return Timing(*(median(values) for values in zip(*timing_rounds, strict=True)))
 
 
 def evaluate_ptx_performance(op, inputs) -> dict[str, Timing | float | None]:
