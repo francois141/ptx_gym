@@ -6,20 +6,64 @@ import re
 import shutil
 import subprocess
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from io import StringIO
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 import orjson
-
 from triton_ptx.evaluation.types import Payload
 
 NCU_ENV_VAR = "NCU_PATH"
 TMP_FILES_DIR = Path(__file__).resolve().parents[2] / "tmp_files"
+PROFILED_KERNEL_NAME = "kernel"
 
 _MAX_MESSAGES = 20
+
+
+def _annotate_ptx_lines(ptx: str, source_path: Path) -> str:
+    source_lines = ptx.splitlines()
+    file_ids = [
+        int(match) for match in re.findall(r"^\s*\.file\s+(\d+)\b", ptx, re.MULTILINE)
+    ]
+    file_id = max(file_ids, default=0) + 1
+    escaped_path = str(source_path).replace("\\", "\\\\").replace('"', '\\"')
+    file_directive = f'.file {file_id} "{escaped_path}"'
+    annotated_lines: list[str] = []
+    inserted_file = False
+    entry_seen = False
+    body_depth = 0
+
+    for line_number, line in enumerate(source_lines, start=1):
+        stripped = line.strip()
+        if not inserted_file and re.search(r"(?:\.visible\s+)?\.entry\b", stripped):
+            annotated_lines.append(file_directive)
+            inserted_file = True
+        if re.search(r"(?:\.visible\s+)?\.entry\b", stripped):
+            entry_seen = True
+
+        inside_body = entry_seen and body_depth > 0
+        if inside_body and _is_ptx_instruction(stripped):
+            indentation = line[: len(line) - len(line.lstrip())]
+            annotated_lines.append(f"{indentation}.loc {file_id} {line_number} 0")
+        annotated_lines.append(line)
+
+        if entry_seen:
+            body_depth += line.count("{") - line.count("}")
+
+    if not inserted_file:
+        raise ValueError("PTX source does not contain an entry function.")
+    return "\n".join(annotated_lines) + ("\n" if ptx.endswith("\n") else "")
+
+
+def _is_ptx_instruction(stripped_line: str) -> bool:
+    return bool(
+        stripped_line
+        and stripped_line.endswith(";")
+        and not stripped_line.startswith((".", "//"))
+    )
+
 
 _METRIC_ALIASES: dict[str, tuple[str, ...]] = {
     "hardware.sm_version_major": ("device__attribute_compute_capability_major",),
@@ -583,12 +627,14 @@ class NCUResult:
         metrics: Every named metric returned by Nsight Compute.
         error: Nsight Compute diagnostics written to standard error.
         return_code: Process exit status, or ``None`` when profiling did not run.
+        source_report: CSV source-page output with SASS instruction correlation.
     """
 
     summary: dict[str, Any]
     metrics: dict[str, Any]
     error: str
     return_code: int | None
+    source_report: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable profiling report.
@@ -638,12 +684,19 @@ def profile_ptx_with_ncu(
     request_dir = TMP_FILES_DIR / uuid4().hex
     request_dir.mkdir(parents=True)
     request_path = request_dir / "request.json"
+    profile_path = request_dir / "profile.ncu-rep"
+    source_path = request_dir / "candidate.ptx"
     try:
+        source_path.write_text(payload.ptx, encoding="utf-8")
+        profiled_payload = replace(
+            payload,
+            ptx=_annotate_ptx_lines(payload.ptx, source_path),
+        )
         request_path.write_bytes(
             orjson.dumps(
                 {
                     "kernel_name": kernel_name,
-                    "candidate": payload.to_launch_dict(),
+                    "candidate": profiled_payload.to_launch_dict(),
                 }
             )
         )
@@ -653,11 +706,20 @@ def profile_ptx_with_ncu(
                     ncu_path,
                     "--target-processes",
                     "application-only",
+                    "--kernel-name",
+                    f"regex:^{PROFILED_KERNEL_NAME}$",
                     "--set",
                     "full",
+                    "--import-source",
+                    "yes",
+                    "--source-folders",
+                    str(request_dir),
                     "--page",
                     "raw",
                     "--csv",
+                    "--export",
+                    str(profile_path),
+                    "--force-overwrite",
                     sys.executable,
                     "-m",
                     "triton_ptx.evaluation.ncu_runner",
@@ -689,11 +751,40 @@ def profile_ptx_with_ncu(
             )
 
         summary, metrics = _parse_ncu_output(completed.stdout)
+        source_report = ""
+        if completed.returncode == 0 and profile_path.exists():
+            try:
+                source_completed = subprocess.run(
+                    [
+                        ncu_path,
+                        "--import",
+                        str(profile_path),
+                        "--page",
+                        "source",
+                        "--print-source",
+                        "cuda,sass",
+                        "--csv",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout_seconds,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                completed.stderr = (
+                    f"{completed.stderr}\nNCU source export failed: {exc}"
+                ).strip()
+            else:
+                source_report = source_completed.stdout
+                if source_completed.returncode != 0:
+                    source_error = source_completed.stderr.strip()
+                    if source_error:
+                        completed.stderr = f"{completed.stderr}\n{source_error}".strip()
         return NCUResult(
             summary=summary,
             metrics=metrics,
             error=completed.stderr,
             return_code=completed.returncode,
+            source_report=source_report,
         )
     finally:
         shutil.rmtree(request_dir)
