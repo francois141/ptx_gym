@@ -129,7 +129,6 @@ class EvaluatedCandidate:
     kernel_name: str = field(compare=False)
     git_commit_hash: str = field(compare=False)
 
-    payload: dict[str, Any] = field(compare=False)
     compiles: bool = field(compare=False)
     correct: bool = field(compare=False)
     message: str = field(compare=False)
@@ -162,7 +161,6 @@ class EvaluatedCandidate:
         *,
         kernel_name: str,
         git_commit_hash: str,
-        payload: dict[str, Any],
         compiles: bool,
         correct: bool,
         message: str,
@@ -176,7 +174,6 @@ class EvaluatedCandidate:
         return cls(
             kernel_name=kernel_name,
             git_commit_hash=git_commit_hash,
-            payload=payload,
             compiles=compiles,
             correct=correct,
             message=message,
@@ -252,8 +249,12 @@ class EvaluatedCandidate:
         }
 
     def to_json(self, indent: int = 2) -> str:
+        data = self.to_dict()
+        ncu_report = data.get("ncu_report")
+        if isinstance(ncu_report, dict):
+            ncu_report.pop("source_report", None)
         return json.dumps(
-            _json_safe(self.to_dict()),
+            _json_safe(data),
             indent=indent,
             ensure_ascii=False,
         )

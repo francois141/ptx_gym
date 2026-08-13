@@ -46,7 +46,6 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
             return EvaluatedCandidate.failed(
                 kernel_name=self.kernel_name,
                 git_commit_hash=self.git_commit_hash,
-                payload=launch_payload,
                 compiles=False,
                 correct=False,
                 message=compile_error or "Compilation failed",
@@ -63,7 +62,6 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
             return EvaluatedCandidate.failed(
                 kernel_name=self.kernel_name,
                 git_commit_hash=self.git_commit_hash,
-                payload=launch_payload,
                 compiles=True,
                 correct=False,
                 message=f"Sanitizer check crashed: {type(exc).__name__}: {exc}",
@@ -85,7 +83,6 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
             return EvaluatedCandidate.failed(
                 kernel_name=self.kernel_name,
                 git_commit_hash=self.git_commit_hash,
-                payload=launch_payload,
                 compiles=True,
                 correct=False,
                 message=message,
@@ -105,7 +102,6 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
             return EvaluatedCandidate.failed(
                 kernel_name=self.kernel_name,
                 git_commit_hash=self.git_commit_hash,
-                payload=launch_payload,
                 compiles=True,
                 correct=False,
                 message=f"Correctness check crashed: {type(exc).__name__}: {exc}",
@@ -119,7 +115,6 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
             return EvaluatedCandidate.failed(
                 kernel_name=self.kernel_name,
                 git_commit_hash=self.git_commit_hash,
-                payload=launch_payload,
                 compiles=True,
                 correct=False,
                 message="Correctness check failed",
@@ -145,7 +140,6 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
             return EvaluatedCandidate(
                 kernel_name=self.kernel_name,
                 git_commit_hash=self.git_commit_hash,
-                payload=launch_payload,
                 compiles=True,
                 correct=True,
                 message="Compiled, passed correctness, benchmarked successfully",
@@ -177,7 +171,6 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
             return EvaluatedCandidate.failed(
                 kernel_name=self.kernel_name,
                 git_commit_hash=self.git_commit_hash,
-                payload=launch_payload,
                 compiles=True,
                 correct=False,
                 message=f"Benchmark failed: {type(exc).__name__}: {exc}",

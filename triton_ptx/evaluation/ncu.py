@@ -30,7 +30,7 @@ def _annotate_ptx_lines(ptx: str, source_path: Path) -> str:
     file_id = max(file_ids, default=0) + 1
     escaped_path = str(source_path).replace("\\", "\\\\").replace('"', '\\"')
     file_directive = f'.file {file_id} "{escaped_path}"'
-    annotated_lines: list[str] = []
+    annotated_lines = []
     inserted_file = False
     entry_seen = False
     body_depth = 0
@@ -42,13 +42,10 @@ def _annotate_ptx_lines(ptx: str, source_path: Path) -> str:
             inserted_file = True
         if re.search(r"(?:\.visible\s+)?\.entry\b", stripped):
             entry_seen = True
-
-        inside_body = entry_seen and body_depth > 0
-        if inside_body and _is_ptx_instruction(stripped):
+        if entry_seen and body_depth > 0 and _is_ptx_instruction(stripped):
             indentation = line[: len(line) - len(line.lstrip())]
             annotated_lines.append(f"{indentation}.loc {file_id} {line_number} 0")
         annotated_lines.append(line)
-
         if entry_seen:
             body_depth += line.count("{") - line.count("}")
 
