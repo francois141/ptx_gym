@@ -26,7 +26,8 @@ class CausalAttentionKernel(TritonPTXKernel):
         key_ptr,
         value_ptr,
         output_ptr,
-        sequence_length,
+        query_length,
+        key_value_length,
         scale,
         BLOCK_M: tl.constexpr,
         BLOCK_N: tl.constexpr,
@@ -36,11 +37,12 @@ class CausalAttentionKernel(TritonPTXKernel):
         query_offsets = query_block * BLOCK_M + tl.arange(0, BLOCK_M)
         key_offsets = tl.arange(0, BLOCK_N)
         feature_offsets = tl.arange(0, KERNEL_HEAD_DIM)
-        batch_head_offset = batch_head * sequence_length * KERNEL_HEAD_DIM
-        query_mask = query_offsets < sequence_length
+        query_head_offset = batch_head * query_length * KERNEL_HEAD_DIM
+        key_value_head_offset = batch_head * key_value_length * KERNEL_HEAD_DIM
+        query_mask = query_offsets < query_length
         query_ptrs = (
             query_ptr
-            + batch_head_offset
+            + query_head_offset
             + query_offsets[:, None] * KERNEL_HEAD_DIM
             + feature_offsets[None, :]
         )
@@ -49,18 +51,19 @@ class CausalAttentionKernel(TritonPTXKernel):
         score_sums = tl.zeros((BLOCK_M,), tl.float32)
         accumulator = tl.zeros((BLOCK_M, KERNEL_HEAD_DIM), tl.float32)
 
-        for key_block_start in tl.range(0, sequence_length, BLOCK_N):
+        for key_block_start in tl.range(0, key_value_length, BLOCK_N):
             current_key_offsets = key_block_start + key_offsets
-            key_mask = current_key_offsets < sequence_length
+            key_mask = current_key_offsets < key_value_length
             key_ptrs = (
                 key_ptr
-                + batch_head_offset
+                + key_value_head_offset
                 + current_key_offsets[:, None] * KERNEL_HEAD_DIM
                 + feature_offsets[None, :]
             )
             keys = tl.load(key_ptrs, mask=key_mask[:, None], other=0.0)
             scores = tl.dot(queries, tl.trans(keys)) * scale
-            causal_mask = query_offsets[:, None] >= current_key_offsets[None, :]
+            query_positions = query_offsets + key_value_length - query_length
+            causal_mask = query_positions[:, None] >= current_key_offsets[None, :]
             scores = tl.where(causal_mask, scores, -float("inf"))
             block_max_scores = tl.max(scores, axis=1)
             next_max_scores = tl.maximum(max_scores, block_max_scores)
@@ -69,7 +72,7 @@ class CausalAttentionKernel(TritonPTXKernel):
             score_sums = score_sums * rescale + tl.sum(probabilities, axis=1)
             value_ptrs = (
                 value_ptr
-                + batch_head_offset
+                + key_value_head_offset
                 + current_key_offsets[:, None] * KERNEL_HEAD_DIM
                 + feature_offsets[None, :]
             )
@@ -81,7 +84,7 @@ class CausalAttentionKernel(TritonPTXKernel):
 
         output_ptrs = (
             output_ptr
-            + batch_head_offset
+            + query_head_offset
             + query_offsets[:, None] * KERNEL_HEAD_DIM
             + feature_offsets[None, :]
         )
@@ -92,25 +95,33 @@ class CausalAttentionKernel(TritonPTXKernel):
         )
 
     def get_random_input(self, fixed: bool = False):
-        return tuple(
+        query = torch.rand(
+            (INFERENCE_BATCH_SIZE, INFERENCE_NUM_ATTENTION_HEADS, 1, HEAD_DIM),
+            device="cuda",
+            dtype=torch.float16,
+        )
+        key_value = tuple(
             torch.rand(
                 (INFERENCE_BATCH_SIZE, INFERENCE_NUM_ATTENTION_HEADS, 38, HEAD_DIM),
                 device="cuda",
                 dtype=torch.float16,
             )
-            for _ in range(3)
+            for _ in range(2)
         )
+        return query, *key_value
 
     def get_shape_information(self) -> str:
         return (
-            "- query_ptr, key_ptr, value_ptr: float16 tensors with shape "
-            "(1, 32, sequence_length, 128)\n"
-            "- output_ptr: float16 tensor with shape (1, 32, sequence_length, 128)"
+            "- query_ptr: float16 tensor with shape (1, 32, 1, 128)\n"
+            "- key_ptr, value_ptr: float16 tensors with shape "
+            "(1, 32, key_value_length, 128)\n"
+            "- output_ptr: float16 tensor with shape (1, 32, 1, 128)"
         )
 
     def forward_triton(self, inputs, ptx=False):
         query_states, key_states, value_states = inputs
-        batch_size, num_heads, sequence_length, head_dim = query_states.shape
+        batch_size, num_heads, query_length, head_dim = query_states.shape
+        key_value_length = key_states.shape[-2]
         assert query_states.is_cuda, "Attention requires CUDA queries."
         assert key_states.is_cuda and value_states.is_cuda, (
             "Attention requires CUDA keys and values."
@@ -127,20 +138,29 @@ class CausalAttentionKernel(TritonPTXKernel):
         assert query_states.is_contiguous(), "Attention queries must be contiguous."
         assert key_states.is_contiguous(), "Attention keys must be contiguous."
         assert value_states.is_contiguous(), "Attention values must be contiguous."
-        assert key_states.shape == query_states.shape, (
-            "Attention keys must have the same shape as queries."
+        expected_key_value_shape = (
+            INFERENCE_BATCH_SIZE,
+            INFERENCE_NUM_ATTENTION_HEADS,
+            key_value_length,
+            HEAD_DIM,
         )
-        assert value_states.shape == query_states.shape, (
-            "Attention values must have the same shape as queries."
+        assert key_states.shape == expected_key_value_shape, (
+            "Attention keys have an invalid shape."
         )
-        assert sequence_length > 0, "Attention sequence length must be positive."
+        assert value_states.shape == expected_key_value_shape, (
+            "Attention values have an invalid shape."
+        )
+        assert 0 < query_length <= key_value_length, (
+            "Attention query length must be positive and no greater than the "
+            "key/value length."
+        )
         assert (batch_size, num_heads, head_dim) == (
             INFERENCE_BATCH_SIZE,
             INFERENCE_NUM_ATTENTION_HEADS,
             HEAD_DIM,
         ), (
             "Apertus inference attention requires query, key, and value shape "
-            f"(1, 32, sequence_length, 128); received {query_states.shape}."
+            f"(1, 32, query_length, 128); received {query_states.shape}."
         )
         output = torch.empty_like(query_states)
         launch_kernel = self.compiled_kernel_ptx if ptx else self.compiled_kernel
@@ -149,7 +169,7 @@ class CausalAttentionKernel(TritonPTXKernel):
         )
         kernel = launch_kernel[
             (
-                triton.cdiv(sequence_length, self.block_m),
+                triton.cdiv(query_length, self.block_m),
                 INFERENCE_NUM_ATTENTION_HEADS,
             )
         ](
@@ -157,7 +177,8 @@ class CausalAttentionKernel(TritonPTXKernel):
             key_states,
             value_states,
             output,
-            sequence_length=sequence_length,
+            query_length=query_length,
+            key_value_length=key_value_length,
             scale=HEAD_DIM**-0.5,
             BLOCK_M=self.block_m,
             BLOCK_N=self.block_n,
@@ -167,6 +188,18 @@ class CausalAttentionKernel(TritonPTXKernel):
 
     def forward_torch(self, inputs):
         query_states, key_states, value_states = inputs
+        query_length = query_states.shape[-2]
+        key_value_length = key_states.shape[-2]
+        query_positions = torch.arange(
+            key_value_length - query_length,
+            key_value_length,
+            device=query_states.device,
+        )
+        key_positions = torch.arange(key_value_length, device=query_states.device)
+        causal_mask = key_positions[None, :] <= query_positions[:, None]
         return functional.scaled_dot_product_attention(
-            query_states, key_states, value_states, is_causal=True
+            query_states,
+            key_states,
+            value_states,
+            attn_mask=causal_mask,
         )

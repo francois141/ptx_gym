@@ -45,16 +45,16 @@ class RoPEKernel(TritonPTXKernel):
         )
 
     def get_random_input(self, fixed: bool = False):
-        hidden_states = torch.rand((1, 1, 16, 128), device="cuda", dtype=torch.float16)
-        frequencies = torch.rand((16, 128), device="cuda", dtype=torch.float16)
+        hidden_states = torch.rand((1, 1, 1, 128), device="cuda", dtype=torch.float16)
+        frequencies = torch.rand((1, 128), device="cuda", dtype=torch.float16)
         return hidden_states, frequencies, frequencies.clone()
 
     def get_shape_information(self) -> str:
         return (
-            "- input_ptr: float16 tensor with shape (1, 1, 16, 4096)\n"
-            "- cos_ptr: float16 tensor with shape (16, 4096)\n"
-            "- sin_ptr: float16 tensor with shape (16, 4096)\n"
-            "- output_ptr: float16 tensor with shape (1, 1, 16, 4096)"
+            "- input_ptr: float16 tensor with shape (1, 1, 1, 128)\n"
+            "- cos_ptr: float16 tensor with shape (1, 128)\n"
+            "- sin_ptr: float16 tensor with shape (1, 128)\n"
+            "- output_ptr: float16 tensor with shape (1, 1, 1, 128)"
         )
 
     def forward_triton(self, inputs, ptx=False):
@@ -67,11 +67,8 @@ class RoPEKernel(TritonPTXKernel):
         )
         assert cos.is_cuda and sin.is_cuda, "RoPE frequencies must be CUDA tensors."
         assert (
-            cos.device == hidden_states.device
-            and sin.device == hidden_states.device
-        ), (
-            "RoPE frequencies must be on the input device."
-        )
+            cos.device == hidden_states.device and sin.device == hidden_states.device
+        ), "RoPE frequencies must be on the input device."
         assert cos.dtype == hidden_states.dtype and sin.dtype == hidden_states.dtype, (
             "RoPE frequencies must match the input dtype."
         )

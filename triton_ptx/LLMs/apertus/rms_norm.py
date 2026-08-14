@@ -5,84 +5,96 @@ import triton.language as tl
 from triton_ptx.kernels.base import TritonPTXKernel
 
 
-class _ApertusRMSNormKernel(TritonPTXKernel):
-    hidden_size: int
-
-    def __init__(self, *, ptx=None):
-        self.block_size = 128
-        self.num_warps = 4
-        self.constexpr_values = {"BLOCK_SIZE": self.block_size}
-        self.init_compiled_kernels(ptx=ptx)
-
-    def get_random_input(self, fixed: bool = False):
-        return (
-            torch.rand(
-                (1, self.hidden_size), device="cuda", dtype=torch.float16
-            ),
-            torch.rand(self.hidden_size, device="cuda", dtype=torch.float16),
-            1e-6,
-        )
-
-    def get_shape_information(self) -> str:
-        return (
-            f"- input_ptr: float16 tensor with shape (1, {self.hidden_size})\n"
-            f"- weight_ptr: float16 tensor with shape ({self.hidden_size},)\n"
-            f"- output_ptr: float16 tensor with shape (1, {self.hidden_size})"
-        )
-
-    def forward_triton(self, inputs, ptx=False):
-        hidden_states, weight, eps = inputs
-        assert hidden_states.is_cuda, "RMSNorm requires CUDA input."
-        assert weight.is_cuda, "RMSNorm requires CUDA weights."
-        assert hidden_states.device == weight.device, (
-            "RMSNorm input and weights must be on the same device."
-        )
-        assert weight.is_contiguous(), "RMSNorm weights must be contiguous."
-        assert weight.shape == (self.hidden_size,), (
-            f"RMSNorm weights must have shape ({self.hidden_size},)."
-        )
-        assert weight.dtype == hidden_states.dtype, (
-            "RMSNorm weights must match the input dtype."
-        )
-        assert hidden_states.dtype in (torch.float16, torch.bfloat16), (
-            "RMSNorm input must use float16 or bfloat16."
-        )
-        assert hidden_states.is_contiguous(), "RMSNorm input must be contiguous."
-        assert hidden_states.shape[-1] == self.hidden_size, (
-            f"RMSNorm kernel is fixed to hidden size {self.hidden_size}; "
-            f"received {hidden_states.shape[-1]}."
-        )
-        flattened_input = hidden_states.reshape(-1, self.hidden_size)
-        output = torch.empty_like(flattened_input)
-        launch_kernel = self.compiled_kernel_ptx if ptx else self.compiled_kernel
-        launch_kwargs = (
-            self.ptx_launch_kwargs() if ptx else {"num_warps": self.num_warps}
-        )
-        kernel = launch_kernel[(flattened_input.shape[0],)](
-            flattened_input,
-            weight,
-            output,
-            eps=eps,
-            BLOCK_SIZE=self.block_size,
-            **launch_kwargs,
-        )
-        return output.reshape_as(hidden_states), kernel
-
-    def forward_torch(self, inputs):
-        hidden_states, weight, eps = inputs
-        return (
-            hidden_states
-            * torch.rsqrt(
-                hidden_states.float().square().mean(dim=-1, keepdim=True) + eps
-            ).to(hidden_states.dtype)
-            * weight
-        )
+def _initialize(kernel, ptx):
+    kernel.block_size = 128
+    kernel.num_warps = 4
+    kernel.constexpr_values = {"BLOCK_SIZE": kernel.block_size}
+    kernel.init_compiled_kernels(ptx=ptx)
 
 
-class ApertusRMSNorm128Kernel(_ApertusRMSNormKernel):
+def _get_random_input(hidden_size):
+    return (
+        torch.rand((1, hidden_size), device="cuda", dtype=torch.float16),
+        torch.rand(hidden_size, device="cuda", dtype=torch.float16),
+        1e-6,
+    )
+
+
+def _get_shape_information(hidden_size):
+    return (
+        f"- input_ptr: float16 tensor with shape (1, {hidden_size})\n"
+        f"- weight_ptr: float16 tensor with shape ({hidden_size},)\n"
+        f"- output_ptr: float16 tensor with shape (1, {hidden_size})"
+    )
+
+
+def _forward_triton(kernel, inputs, ptx, hidden_size):
+    hidden_states, weight, eps = inputs
+    assert hidden_states.is_cuda, "RMSNorm requires CUDA input."
+    assert weight.is_cuda, "RMSNorm requires CUDA weights."
+    assert hidden_states.device == weight.device, (
+        "RMSNorm input and weights must be on the same device."
+    )
+    assert weight.is_contiguous(), "RMSNorm weights must be contiguous."
+    assert weight.shape == (hidden_size,), (
+        f"RMSNorm weights must have shape ({hidden_size},)."
+    )
+    assert weight.dtype == hidden_states.dtype, (
+        "RMSNorm weights must match the input dtype."
+    )
+    assert hidden_states.dtype in (torch.float16, torch.bfloat16), (
+        "RMSNorm input must use float16 or bfloat16."
+    )
+    assert hidden_states.is_contiguous(), "RMSNorm input must be contiguous."
+    assert hidden_states.shape[-1] == hidden_size, (
+        f"RMSNorm kernel is fixed to hidden size {hidden_size}; "
+        f"received {hidden_states.shape[-1]}."
+    )
+    flattened_input = hidden_states.reshape(-1, hidden_size)
+    output = torch.empty_like(flattened_input)
+    launch_kernel = kernel.compiled_kernel_ptx if ptx else kernel.compiled_kernel
+    launch_kwargs = (
+        kernel.ptx_launch_kwargs() if ptx else {"num_warps": kernel.num_warps}
+    )
+    compiled_kernel = launch_kernel[(flattened_input.shape[0],)](
+        flattened_input,
+        weight,
+        output,
+        eps=eps,
+        BLOCK_SIZE=kernel.block_size,
+        **launch_kwargs,
+    )
+    return output.reshape_as(hidden_states), compiled_kernel
+
+
+def _forward_torch(inputs):
+    hidden_states, weight, eps = inputs
+    return (
+        hidden_states
+        * torch.rsqrt(
+            hidden_states.float().square().mean(dim=-1, keepdim=True) + eps
+        ).to(hidden_states.dtype)
+        * weight
+    )
+
+
+class ApertusRMSNorm128Kernel(TritonPTXKernel):
     """RMSNorm specialized for Apertus attention-head dimensions."""
 
-    hidden_size = 128
+    def __init__(self, *, ptx=None):
+        _initialize(self, ptx)
+
+    def get_random_input(self, fixed: bool = False):
+        return _get_random_input(128)
+
+    def get_shape_information(self) -> str:
+        return _get_shape_information(128)
+
+    def forward_triton(self, inputs, ptx=False):
+        return _forward_triton(self, inputs, ptx, 128)
+
+    def forward_torch(self, inputs):
+        return _forward_torch(inputs)
 
     @staticmethod
     def kernel(input_ptr, weight_ptr, output_ptr, eps, BLOCK_SIZE: tl.constexpr):
@@ -95,10 +107,23 @@ class ApertusRMSNorm128Kernel(_ApertusRMSNormKernel):
         tl.store(output_ptr + row_offset + offsets, normalized * weights)
 
 
-class ApertusRMSNorm4096Kernel(_ApertusRMSNormKernel):
+class ApertusRMSNorm4096Kernel(TritonPTXKernel):
     """RMSNorm specialized for Apertus's model hidden dimension."""
 
-    hidden_size = 4096
+    def __init__(self, *, ptx=None):
+        _initialize(self, ptx)
+
+    def get_random_input(self, fixed: bool = False):
+        return _get_random_input(4096)
+
+    def get_shape_information(self) -> str:
+        return _get_shape_information(4096)
+
+    def forward_triton(self, inputs, ptx=False):
+        return _forward_triton(self, inputs, ptx, 4096)
+
+    def forward_torch(self, inputs):
+        return _forward_torch(inputs)
 
     @staticmethod
     def kernel(input_ptr, weight_ptr, output_ptr, eps, BLOCK_SIZE: tl.constexpr):
