@@ -12,7 +12,7 @@ class GemmaRoPEKernel(TritonPTXKernel):
         self.block_size = 512
         self.num_warps = 4
         self.constexpr_values = {"BLOCK_SIZE": self.block_size}
-        self.init_compiled_kernels(ptx=ptx)
+        self.init_compiled_kernels(ptx=ptx, autotune=False)
 
     @staticmethod
     def kernel(

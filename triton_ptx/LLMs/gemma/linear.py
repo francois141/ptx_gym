@@ -21,7 +21,7 @@ class GemmaLinearKernel(TritonPTXKernel):
             "BLOCK_N": self.block_n,
             "BLOCK_K": self.block_k,
         }
-        self.init_compiled_kernels(ptx=ptx)
+        self.init_compiled_kernels(ptx=ptx, autotune=False)
 
     @staticmethod
     def kernel(

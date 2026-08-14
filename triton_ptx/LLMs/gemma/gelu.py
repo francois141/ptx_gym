@@ -7,35 +7,30 @@ from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class GemmaGELUKernel(TritonPTXKernel):
-    """Gemma's tanh-approximated GELU activation kernel."""
+    """Gemma's mask-free one-dimensional GELU kernel."""
 
     def __init__(self, *, ptx=None):
-        self.block_size = 1024
+        self.block_size = 128
         self.num_warps = 4
         self.constexpr_values = {"BLOCK_SIZE": self.block_size}
-        self.init_compiled_kernels(ptx=ptx)
+        self.init_compiled_kernels(ptx=ptx, autotune=False)
 
     @staticmethod
-    def kernel(input_ptr, output_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
+    def kernel(input_ptr, output_ptr, BLOCK_SIZE: tl.constexpr):
         block = tl.program_id(axis=0)
         offsets = block * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-        mask = offsets < n_elements
-        values = tl.load(input_ptr + offsets, mask=mask, other=0.0).to(tl.float32)
+        values = tl.load(input_ptr + offsets).to(tl.float32)
         inner = 0.7978845608028654 * (values + 0.044715 * values * values * values)
         output = 0.5 * values * (1.0 + tl.extra.libdevice.tanh(inner))
-        tl.store(
-            output_ptr + offsets,
-            output.to(output_ptr.dtype.element_ty),
-            mask=mask,
-        )
+        tl.store(output_ptr + offsets, output.to(output_ptr.dtype.element_ty))
 
     def get_random_input(self, fixed: bool = False):
-        return torch.rand(10_240, device="cuda", dtype=torch.bfloat16)
+        return torch.rand(5_888, device="cuda", dtype=torch.bfloat16)
 
     def get_shape_information(self) -> str:
         return (
-            "- input_ptr: bfloat16 tensor with shape (1, 10240)\n"
-            "- output_ptr: bfloat16 tensor with shape (1, 10240)"
+            "- input_ptr: bfloat16 tensor with shape (5888,)\n"
+            "- output_ptr: bfloat16 tensor with shape (5888,)"
         )
 
     def forward_triton(self, inputs, ptx=False):
@@ -45,6 +40,10 @@ class GemmaGELUKernel(TritonPTXKernel):
             "GELU input must use float16 or bfloat16."
         )
         assert inputs.numel() > 0, "GELU input must not be empty."
+        assert inputs.numel() % self.block_size == 0, (
+            f"GELU input size must be divisible by {self.block_size}; "
+            f"received {inputs.numel()} elements."
+        )
         flattened_input = inputs.reshape(-1)
         output = torch.empty_like(flattened_input)
         launch_kernel = self.compiled_kernel_ptx if ptx else self.compiled_kernel
@@ -55,7 +54,6 @@ class GemmaGELUKernel(TritonPTXKernel):
         kernel = launch_kernel[grid](
             flattened_input,
             output,
-            flattened_input.numel(),
             BLOCK_SIZE=self.block_size,
             **launch_kwargs,
         )
