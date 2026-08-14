@@ -408,6 +408,8 @@ class Apertus1p5TextForCausalLM(torch.nn.Module):
 
 
 class ApertusLLM(LLM):
+    ptx_input_dtype = torch.bfloat16
+
     @classmethod
     def get_kernel_classes(cls):
         return APERTUS_KERNEL_CLASSES
