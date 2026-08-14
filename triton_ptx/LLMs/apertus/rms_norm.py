@@ -9,7 +9,7 @@ def _initialize(kernel, ptx):
     kernel.block_size = 128
     kernel.num_warps = 4
     kernel.constexpr_values = {"BLOCK_SIZE": kernel.block_size}
-    kernel.init_compiled_kernels(ptx=ptx)
+    kernel.init_compiled_kernels(ptx=ptx, autotune=False)
 
 
 def _get_random_input(hidden_size):

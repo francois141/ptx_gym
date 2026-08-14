@@ -18,7 +18,7 @@ class LinearKernel(TritonPTXKernel):
             "BLOCK_N": self.block_n,
             "BLOCK_K": self.block_k,
         }
-        self.init_compiled_kernels(ptx=ptx, autotune=True)
+        self.init_compiled_kernels(ptx=ptx, autotune=False)
 
     @staticmethod
     def kernel(
@@ -94,9 +94,7 @@ class LinearKernel(TritonPTXKernel):
         assert weight_input_features == input_features, (
             "Weight input features must match input."
         )
-        assert input_features % 1024 == 0, (
-            "Input features must be a multiple of 1024."
-        )
+        assert input_features % 1024 == 0, "Input features must be a multiple of 1024."
         assert output_features % 1024 == 0, (
             "Output features must be a multiple of 1024."
         )

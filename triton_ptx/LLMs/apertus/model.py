@@ -228,7 +228,7 @@ class Apertus1p5TextAttention(torch.nn.Module):
             HEAD_DIM, device=device, dtype=dtype, kernels=self.kernels
         )
 
-    def forward(self, hidden_states, cos, sin):
+    def forward(self, hidden_states, cos, sin, past_key_value=None):
         batch_size, sequence_length, _ = hidden_states.shape
         query_states = (
             self.q_proj(hidden_states)
@@ -259,6 +259,10 @@ class Apertus1p5TextAttention(torch.nn.Module):
         repeat_factor = NUM_ATTENTION_HEADS // NUM_KEY_VALUE_HEADS
         key_states = key_states.repeat_interleave(repeat_factor, dim=1)
         value_states = value_states.repeat_interleave(repeat_factor, dim=1)
+        if past_key_value is not None:
+            past_key_states, past_value_states = past_key_value
+            key_states = torch.cat((past_key_states, key_states), dim=2)
+            value_states = torch.cat((past_value_states, value_states), dim=2)
         attention_output, _ = self.kernels.causal_attention.forward_triton(
             (query_states, key_states, value_states),
             ptx=ApertusKernelSet.uses_custom_ptx(self.kernels.causal_attention),
@@ -266,7 +270,7 @@ class Apertus1p5TextAttention(torch.nn.Module):
         attention_output = attention_output.transpose(1, 2).reshape(
             batch_size, sequence_length, HIDDEN_SIZE
         )
-        return self.o_proj(attention_output)
+        return self.o_proj(attention_output), (key_states, value_states)
 
 
 class Apertus1p5TextMLP(torch.nn.Module):
@@ -307,11 +311,18 @@ class Apertus1p5TextDecoderLayer(torch.nn.Module):
             HIDDEN_SIZE, device=device, dtype=dtype, kernels=self.kernels
         )
 
-    def forward(self, hidden_states, cos, sin):
-        hidden_states = hidden_states + self.self_attn(
-            self.attention_layernorm(hidden_states), cos, sin
+    def forward(self, hidden_states, cos, sin, past_key_value=None):
+        attention_output, key_value = self.self_attn(
+            self.attention_layernorm(hidden_states),
+            cos,
+            sin,
+            past_key_value,
         )
-        return hidden_states + self.mlp(self.feedforward_layernorm(hidden_states))
+        hidden_states = hidden_states + attention_output
+        return (
+            hidden_states + self.mlp(self.feedforward_layernorm(hidden_states)),
+            key_value,
+        )
 
 
 class Apertus1p5TextModel(torch.nn.Module):
@@ -334,13 +345,27 @@ class Apertus1p5TextModel(torch.nn.Module):
         )
         self.rotary_emb = Apertus1p5TextRotaryEmbedding(device=device)
 
-    def forward(self, input_ids):
+    def forward(self, input_ids, past_key_values=None, use_cache=False):
+        if past_key_values is not None and len(past_key_values) != NUM_LAYERS:
+            raise ValueError("past_key_values must contain one entry per layer.")
         hidden_states = self.embed_tokens(input_ids)
-        position_ids = torch.arange(input_ids.shape[-1], device=input_ids.device)
+        past_length = 0 if past_key_values is None else past_key_values[0][0].shape[2]
+        position_ids = torch.arange(
+            past_length,
+            past_length + input_ids.shape[-1],
+            device=input_ids.device,
+        )
         cos, sin = self.rotary_emb(hidden_states, position_ids)
-        for layer in self.layers:
-            hidden_states = layer(hidden_states, cos, sin)
-        return self.norm(hidden_states)
+        next_key_values = [] if use_cache else None
+        for index, layer in enumerate(self.layers):
+            past_key_value = None if past_key_values is None else past_key_values[index]
+            hidden_states, key_value = layer(hidden_states, cos, sin, past_key_value)
+            if use_cache:
+                next_key_values.append(key_value)
+        hidden_states = self.norm(hidden_states)
+        if use_cache:
+            return hidden_states, tuple(next_key_values)
+        return hidden_states
 
 
 class Apertus1p5TextForCausalLM(torch.nn.Module):
@@ -356,18 +381,30 @@ class Apertus1p5TextForCausalLM(torch.nn.Module):
             dtype=dtype,
         )
 
-    def forward(self, input_ids):
-        return self.lm_head(self.model(input_ids))
+    def forward(self, input_ids, past_key_values=None, use_cache=False):
+        model_output = self.model(input_ids, past_key_values, use_cache)
+        if not use_cache:
+            return self.lm_head(model_output)
+        hidden_states, next_key_values = model_output
+        return self.lm_head(hidden_states), next_key_values
 
     @torch.inference_mode()
     def generate(self, input_ids, max_new_tokens=32):
         end_token_ids = torch.tensor(EOS_TOKEN_IDS, device=input_ids.device)
-        for _ in range(max_new_tokens):
-            next_token = self(input_ids)[:, -1].argmax(dim=-1, keepdim=True)
-            input_ids = torch.cat((input_ids, next_token), dim=-1)
+        logits, past_key_values = self(input_ids, use_cache=True)
+        generated_tokens = []
+        for token_index in range(max_new_tokens):
+            next_token = logits[:, -1].argmax(dim=-1, keepdim=True)
+            generated_tokens.append(next_token)
             if torch.isin(next_token, end_token_ids).all():
                 break
-        return input_ids
+            if token_index + 1 < max_new_tokens:
+                logits, past_key_values = self(
+                    next_token,
+                    past_key_values=past_key_values,
+                    use_cache=True,
+                )
+        return torch.cat((input_ids, *generated_tokens), dim=-1)
 
 
 class ApertusLLM(LLM):

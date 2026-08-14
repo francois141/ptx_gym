@@ -18,7 +18,7 @@ class CausalAttentionKernel(TritonPTXKernel):
         self.block_n = 64
         self.num_warps = 4
         self.constexpr_values = {"BLOCK_M": self.block_m, "BLOCK_N": self.block_n}
-        self.init_compiled_kernels(ptx=ptx, autotune=True)
+        self.init_compiled_kernels(ptx=ptx, autotune=False)
 
     @staticmethod
     def kernel(
