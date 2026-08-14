@@ -24,27 +24,14 @@ class MarinRMSNormKernel(TritonPTXKernel):
         squared_sum = 0.0
         for block_offset in tl.range(0, hidden_size, BLOCK_SIZE):
             offsets = block_offset + feature_offsets
-            values = tl.load(
-                input_ptr + row_offset + offsets,
-                mask=offsets < hidden_size,
-                other=0.0,
-            ).to(tl.float32)
+            values = tl.load(input_ptr + row_offset + offsets).to(tl.float32)
             squared_sum += tl.sum(values * values, axis=0)
         inverse_rms = tl.rsqrt(squared_sum / hidden_size + eps)
         for block_offset in tl.range(0, hidden_size, BLOCK_SIZE):
             offsets = block_offset + feature_offsets
-            mask = offsets < hidden_size
-            values = tl.load(
-                input_ptr + row_offset + offsets,
-                mask=mask,
-                other=0.0,
-            ).to(tl.float32)
-            weights = tl.load(weight_ptr + offsets, mask=mask)
-            tl.store(
-                output_ptr + row_offset + offsets,
-                values * inverse_rms * weights,
-                mask=mask,
-            )
+            values = tl.load(input_ptr + row_offset + offsets).to(tl.float32)
+            weights = tl.load(weight_ptr + offsets)
+            tl.store(output_ptr + row_offset + offsets, values * inverse_rms * weights)
 
     def get_random_input(self, fixed=False):
         return (
