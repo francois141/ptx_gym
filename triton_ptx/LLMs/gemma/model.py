@@ -1,5 +1,4 @@
 import math
-from time import perf_counter
 
 import torch
 from safetensors import safe_open
@@ -33,24 +32,55 @@ GEMMA_KERNEL_CLASSES = {
 }
 
 
+class GemmaKernelSet:
+    def __init__(
+        self,
+        *,
+        attention_payload=None,
+        gelu_payload=None,
+        linear_payload=None,
+        rms_norm_payload=None,
+        rope_payload=None,
+    ):
+        payloads = {
+            "attention": attention_payload,
+            "gelu": gelu_payload,
+            "linear": linear_payload,
+            "rms_norm": rms_norm_payload,
+            "rope": rope_payload,
+        }
+        for name, kernel_class in GEMMA_KERNEL_CLASSES.items():
+            payload = payloads[name]
+            if hasattr(payload, "model_dump"):
+                payload = payload.model_dump()
+            setattr(self, name, kernel_class(ptx=payload))
+
+    @staticmethod
+    def uses_custom_ptx(kernel):
+        return kernel.compiled_kernel_ptx is not None
+
+
 class Gemma4GELU(torch.nn.Module):
     """Gemma's GELU activation backed by the custom Triton kernel."""
 
-    def __init__(self):
+    def __init__(self, kernels):
         super().__init__()
-        self.kernel = GemmaGELUKernel()
+        self.kernel = kernels.gelu
 
     def forward(self, hidden_states):
-        output, _ = self.kernel.forward_triton(hidden_states)
+        output, _ = self.kernel.forward_triton(
+            hidden_states,
+            ptx=GemmaKernelSet.uses_custom_ptx(self.kernel),
+        )
         return output
 
 
 class Gemma4Attention(torch.nn.Module):
     """Gemma attention backed by the custom Triton kernel."""
 
-    def __init__(self):
+    def __init__(self, kernels):
         super().__init__()
-        self.kernel = GemmaAttentionKernel()
+        self.kernel = kernels.attention
 
     def forward(self, query_states, key_states, value_states, window_size):
         output, _ = self.kernel.forward_triton(
@@ -59,7 +89,8 @@ class Gemma4Attention(torch.nn.Module):
                 key_states.contiguous(),
                 value_states.contiguous(),
                 window_size,
-            )
+            ),
+            ptx=GemmaKernelSet.uses_custom_ptx(self.kernel),
         )
         return output
 
@@ -67,21 +98,38 @@ class Gemma4Attention(torch.nn.Module):
 class Gemma4Linear(torch.nn.Module):
     """Bias-free Gemma projection backed by the custom Triton kernel."""
 
-    def __init__(self, input_features, output_features, device=None, dtype=None):
+    def __init__(
+        self,
+        input_features,
+        output_features,
+        device=None,
+        dtype=None,
+        kernels=None,
+    ):
         super().__init__()
         self.weight = torch.nn.Parameter(
             torch.empty(output_features, input_features, device=device, dtype=dtype)
         )
-        self.kernel = GemmaLinearKernel()
+        self.kernel = (kernels or GemmaKernelSet()).linear
 
     def forward(self, hidden_states):
-        output, _ = self.kernel.forward_triton((hidden_states, self.weight))
+        output, _ = self.kernel.forward_triton(
+            (hidden_states, self.weight),
+            ptx=GemmaKernelSet.uses_custom_ptx(self.kernel),
+        )
         return output
 
 
 class Gemma4RMSNorm(torch.nn.Module):
-    def __init__(self, hidden_size, eps=1e-6, with_scale=True, device=None,
-                 dtype=None):
+    def __init__(
+        self,
+        hidden_size,
+        eps=1e-6,
+        with_scale=True,
+        device=None,
+        dtype=None,
+        kernels=None,
+    ):
         super().__init__()
         self.weight = (
             torch.nn.Parameter(torch.ones(hidden_size, device=device, dtype=dtype))
@@ -89,14 +137,22 @@ class Gemma4RMSNorm(torch.nn.Module):
             else None
         )
         self.eps = eps
+        self.kernel = (kernels or GemmaKernelSet()).rms_norm
 
     def forward(self, hidden_states):
+        if self.weight is not None:
+            hidden_states = hidden_states.contiguous()
+            output, _ = self.kernel.forward_triton(
+                (hidden_states, self.weight, self.eps),
+                ptx=GemmaKernelSet.uses_custom_ptx(self.kernel),
+            )
+            return output
         input_dtype = hidden_states.dtype
         variance = hidden_states.float().square().mean(dim=-1, keepdim=True)
-        hidden_states = (
-            hidden_states * torch.rsqrt(variance + self.eps)
-        ).to(input_dtype)
-        return hidden_states if self.weight is None else hidden_states * self.weight
+        hidden_states = (hidden_states * torch.rsqrt(variance + self.eps)).to(
+            input_dtype
+        )
+        return hidden_states
 
 
 class Gemma4TextScaledWordEmbedding(torch.nn.Embedding):
@@ -117,9 +173,10 @@ class Gemma4TextScaledWordEmbedding(torch.nn.Embedding):
 
 
 class Gemma4TextRotaryEmbedding(torch.nn.Module):
-    def __init__(self, device=None):
+    def __init__(self, device=None, kernels=None):
         super().__init__()
         self.device = device
+        self.kernel = (kernels or GemmaKernelSet()).rope
 
     def forward(self, sequence_length, head_dim, is_local, device, dtype):
         base = 10_000 if is_local else 1_000_000
@@ -131,20 +188,16 @@ class Gemma4TextRotaryEmbedding(torch.nn.Module):
         angles = torch.cat((frequencies, frequencies), dim=-1)
         return angles.cos().to(dtype), angles.sin().to(dtype)
 
-
-def apply_rotary_embedding(hidden_states, cos, sin):
-    rotated = torch.cat(
-        (
-            -hidden_states[..., hidden_states.shape[-1] // 2 :],
-            hidden_states[..., : hidden_states.shape[-1] // 2],
-        ),
-        dim=-1,
-    )
-    return hidden_states * cos[None, None, :, :] + rotated * sin[None, None, :, :]
+    def apply(self, hidden_states, cos, sin):
+        output, _ = self.kernel.forward_triton(
+            (hidden_states.contiguous(), cos, sin),
+            ptx=GemmaKernelSet.uses_custom_ptx(self.kernel),
+        )
+        return output
 
 
 class Gemma4TextAttention(torch.nn.Module):
-    def __init__(self, layer_index, device, dtype):
+    def __init__(self, layer_index, device, dtype, kernels):
         super().__init__()
         self.layer_index = layer_index
         self.is_local = (layer_index + 1) % 6 != 0
@@ -158,38 +211,58 @@ class Gemma4TextAttention(torch.nn.Module):
             self.num_heads * self.head_dim,
             device=device,
             dtype=dtype,
+            kernels=kernels,
         )
-        self.q_norm = Gemma4RMSNorm(self.head_dim, device=device, dtype=dtype)
+        self.q_norm = Gemma4RMSNorm(
+            self.head_dim,
+            device=device,
+            dtype=dtype,
+            kernels=kernels,
+        )
         if not self.is_kv_shared_layer:
-            self.k_norm = Gemma4RMSNorm(self.head_dim, device=device, dtype=dtype)
+            self.k_norm = Gemma4RMSNorm(
+                self.head_dim,
+                device=device,
+                dtype=dtype,
+                kernels=kernels,
+            )
             self.v_norm = Gemma4RMSNorm(
-                self.head_dim, with_scale=False, device=device, dtype=dtype
+                self.head_dim,
+                with_scale=False,
+                device=device,
+                dtype=dtype,
+                kernels=kernels,
             )
             self.k_proj = Gemma4Linear(
                 HIDDEN_SIZE,
                 self.num_key_value_heads * self.head_dim,
                 device=device,
                 dtype=dtype,
+                kernels=kernels,
             )
             self.v_proj = Gemma4Linear(
                 HIDDEN_SIZE,
                 self.num_key_value_heads * self.head_dim,
                 device=device,
                 dtype=dtype,
+                kernels=kernels,
             )
         self.o_proj = Gemma4Linear(
             self.num_heads * self.head_dim,
             HIDDEN_SIZE,
             device=device,
             dtype=dtype,
+            kernels=kernels,
         )
-        self.attention = Gemma4Attention()
+        self.attention = Gemma4Attention(kernels)
 
     def forward(self, hidden_states, rotary_embedding, shared_kv_states):
         batch_size, sequence_length, _ = hidden_states.shape
-        query_states = self.q_proj(hidden_states).view(
-            batch_size, sequence_length, self.num_heads, self.head_dim
-        ).transpose(1, 2)
+        query_states = (
+            self.q_proj(hidden_states)
+            .view(batch_size, sequence_length, self.num_heads, self.head_dim)
+            .transpose(1, 2)
+        )
         query_states = self.q_norm(query_states)
 
         cos, sin = rotary_embedding(
@@ -199,17 +272,25 @@ class Gemma4TextAttention(torch.nn.Module):
             hidden_states.device,
             hidden_states.dtype,
         )
-        query_states = apply_rotary_embedding(query_states, cos, sin)
+        query_states = rotary_embedding.apply(query_states, cos, sin)
         if self.is_kv_shared_layer:
             key_states, value_states = shared_kv_states[self.is_local]
         else:
-            key_states = self.k_proj(hidden_states).view(
-                batch_size, sequence_length, self.num_key_value_heads, self.head_dim
-            ).transpose(1, 2)
-            value_states = self.v_proj(hidden_states).view(
-                batch_size, sequence_length, self.num_key_value_heads, self.head_dim
-            ).transpose(1, 2)
-            key_states = apply_rotary_embedding(self.k_norm(key_states), cos, sin)
+            key_states = (
+                self.k_proj(hidden_states)
+                .view(
+                    batch_size, sequence_length, self.num_key_value_heads, self.head_dim
+                )
+                .transpose(1, 2)
+            )
+            value_states = (
+                self.v_proj(hidden_states)
+                .view(
+                    batch_size, sequence_length, self.num_key_value_heads, self.head_dim
+                )
+                .transpose(1, 2)
+            )
+            key_states = rotary_embedding.apply(self.k_norm(key_states), cos, sin)
             value_states = self.v_norm(value_states)
             if self.stores_shared_kv:
                 shared_kv_states[self.is_local] = (key_states, value_states)
@@ -229,18 +310,30 @@ class Gemma4TextAttention(torch.nn.Module):
 
 
 class Gemma4TextMLP(torch.nn.Module):
-    def __init__(self, device, dtype):
+    def __init__(self, device, dtype, kernels):
         super().__init__()
         self.gate_proj = Gemma4Linear(
-            HIDDEN_SIZE, INTERMEDIATE_SIZE, device=device, dtype=dtype
+            HIDDEN_SIZE,
+            INTERMEDIATE_SIZE,
+            device=device,
+            dtype=dtype,
+            kernels=kernels,
         )
         self.up_proj = Gemma4Linear(
-            HIDDEN_SIZE, INTERMEDIATE_SIZE, device=device, dtype=dtype
+            HIDDEN_SIZE,
+            INTERMEDIATE_SIZE,
+            device=device,
+            dtype=dtype,
+            kernels=kernels,
         )
         self.down_proj = Gemma4Linear(
-            INTERMEDIATE_SIZE, HIDDEN_SIZE, device=device, dtype=dtype
+            INTERMEDIATE_SIZE,
+            HIDDEN_SIZE,
+            device=device,
+            dtype=dtype,
+            kernels=kernels,
         )
-        self.act_fn = Gemma4GELU()
+        self.act_fn = Gemma4GELU(kernels)
 
     def forward(self, hidden_states):
         gate = self.act_fn(self.gate_proj(hidden_states))
@@ -248,31 +341,33 @@ class Gemma4TextMLP(torch.nn.Module):
 
 
 class Gemma4TextDecoderLayer(torch.nn.Module):
-    def __init__(self, layer_index, device, dtype):
+    def __init__(self, layer_index, device, dtype, kernels):
         super().__init__()
         self.layer_index = layer_index
-        self.self_attn = Gemma4TextAttention(layer_index, device, dtype)
-        self.mlp = Gemma4TextMLP(device, dtype)
-        self.input_layernorm = Gemma4RMSNorm(HIDDEN_SIZE, device=device, dtype=dtype)
+        self.self_attn = Gemma4TextAttention(layer_index, device, dtype, kernels)
+        self.mlp = Gemma4TextMLP(device, dtype, kernels)
+        self.input_layernorm = Gemma4RMSNorm(
+            HIDDEN_SIZE, device=device, dtype=dtype, kernels=kernels
+        )
         self.post_attention_layernorm = Gemma4RMSNorm(
-            HIDDEN_SIZE, device=device, dtype=dtype
+            HIDDEN_SIZE, device=device, dtype=dtype, kernels=kernels
         )
         self.pre_feedforward_layernorm = Gemma4RMSNorm(
-            HIDDEN_SIZE, device=device, dtype=dtype
+            HIDDEN_SIZE, device=device, dtype=dtype, kernels=kernels
         )
         self.post_feedforward_layernorm = Gemma4RMSNorm(
-            HIDDEN_SIZE, device=device, dtype=dtype
+            HIDDEN_SIZE, device=device, dtype=dtype, kernels=kernels
         )
         self.per_layer_input_gate = Gemma4Linear(
-            HIDDEN_SIZE, 256, device=device, dtype=dtype
+            HIDDEN_SIZE, 256, device=device, dtype=dtype, kernels=kernels
         )
         self.per_layer_projection = Gemma4Linear(
-            256, HIDDEN_SIZE, device=device, dtype=dtype
+            256, HIDDEN_SIZE, device=device, dtype=dtype, kernels=kernels
         )
         self.post_per_layer_input_norm = Gemma4RMSNorm(
-            HIDDEN_SIZE, device=device, dtype=dtype
+            HIDDEN_SIZE, device=device, dtype=dtype, kernels=kernels
         )
-        self.act_fn = Gemma4GELU()
+        self.act_fn = Gemma4GELU(kernels)
         self.register_buffer("layer_scalar", torch.ones(1, device=device, dtype=dtype))
 
     def forward(
@@ -301,24 +396,32 @@ class Gemma4TextDecoderLayer(torch.nn.Module):
 
 
 class Gemma4TextModel(torch.nn.Module):
-    def __init__(self, device, dtype):
+    def __init__(self, device, dtype, kernels):
         super().__init__()
         self.embed_tokens = Gemma4TextScaledWordEmbedding(
             VOCAB_SIZE, HIDDEN_SIZE, math.sqrt(HIDDEN_SIZE), device=device, dtype=dtype
         )
         self.layers = torch.nn.ModuleList(
-            Gemma4TextDecoderLayer(layer_index, device, dtype)
+            Gemma4TextDecoderLayer(layer_index, device, dtype, kernels)
             for layer_index in range(NUM_LAYERS)
         )
-        self.norm = Gemma4RMSNorm(HIDDEN_SIZE, device=device, dtype=dtype)
-        self.rotary_emb = Gemma4TextRotaryEmbedding(device=device)
+        self.norm = Gemma4RMSNorm(
+            HIDDEN_SIZE, device=device, dtype=dtype, kernels=kernels
+        )
+        self.rotary_emb = Gemma4TextRotaryEmbedding(device=device, kernels=kernels)
         self.embed_tokens_per_layer = Gemma4TextScaledWordEmbedding(
             VOCAB_SIZE, NUM_LAYERS * 256, math.sqrt(256), device=device, dtype=dtype
         )
         self.per_layer_model_projection = Gemma4Linear(
-            HIDDEN_SIZE, NUM_LAYERS * 256, device=device, dtype=dtype
+            HIDDEN_SIZE,
+            NUM_LAYERS * 256,
+            device=device,
+            dtype=dtype,
+            kernels=kernels,
         )
-        self.per_layer_projection_norm = Gemma4RMSNorm(256, device=device, dtype=dtype)
+        self.per_layer_projection_norm = Gemma4RMSNorm(
+            256, device=device, dtype=dtype, kernels=kernels
+        )
 
     def forward(self, input_ids):
         hidden_states = self.embed_tokens(input_ids)
@@ -344,11 +447,16 @@ class Gemma4TextModel(torch.nn.Module):
 
 
 class Gemma4ForConditionalGeneration(torch.nn.Module):
-    def __init__(self, device, dtype=torch.bfloat16):
+    def __init__(self, device, dtype=torch.bfloat16, kernels=None):
         super().__init__()
-        self.model = Gemma4TextModel(device, dtype)
+        self.kernels = kernels or GemmaKernelSet()
+        self.model = Gemma4TextModel(device, dtype, self.kernels)
         self.lm_head = Gemma4Linear(
-            HIDDEN_SIZE, VOCAB_SIZE, device=device, dtype=dtype
+            HIDDEN_SIZE,
+            VOCAB_SIZE,
+            device=device,
+            dtype=dtype,
+            kernels=self.kernels,
         )
         self.lm_head.weight = self.model.embed_tokens.weight
 
@@ -368,30 +476,30 @@ class Gemma4ForConditionalGeneration(torch.nn.Module):
         return input_ids
 
 
-def load_pretrained_text_model(device):
-    model = Gemma4ForConditionalGeneration("meta")
+def load_pretrained_text_model(device, kernels=None):
+    model = Gemma4ForConditionalGeneration("meta", kernels=kernels)
     model.to_empty(device=device)
     model_state = model.state_dict()
     loaded_keys = 0
-    with torch.no_grad():
-        with safe_open(MODEL_WEIGHTS_PATH, framework="pt", device="cpu") as checkpoint:
-            checkpoint_keys = set(checkpoint.keys())
-            for model_key, parameter in model_state.items():
-                if model_key == "lm_head.weight":
-                    continue
-                checkpoint_key = (
-                    "model.language_model." + model_key.removeprefix("model.")
+    with (
+        torch.no_grad(),
+        safe_open(MODEL_WEIGHTS_PATH, framework="pt", device="cpu") as checkpoint,
+    ):
+        checkpoint_keys = set(checkpoint.keys())
+        for model_key, parameter in model_state.items():
+            if model_key == "lm_head.weight":
+                continue
+            checkpoint_key = "model.language_model." + model_key.removeprefix("model.")
+            if checkpoint_key not in checkpoint_keys:
+                raise KeyError(f"Missing checkpoint tensor: {checkpoint_key}")
+            tensor = checkpoint.get_tensor(checkpoint_key)
+            if tensor.shape != parameter.shape:
+                raise ValueError(
+                    f"Shape mismatch for {checkpoint_key}: "
+                    f"{tensor.shape} != {parameter.shape}"
                 )
-                if checkpoint_key not in checkpoint_keys:
-                    raise KeyError(f"Missing checkpoint tensor: {checkpoint_key}")
-                tensor = checkpoint.get_tensor(checkpoint_key)
-                if tensor.shape != parameter.shape:
-                    raise ValueError(
-                        f"Shape mismatch for {checkpoint_key}: "
-                        f"{tensor.shape} != {parameter.shape}"
-                    )
-                parameter.copy_(tensor.to(device=device, dtype=parameter.dtype))
-                loaded_keys += 1
+            parameter.copy_(tensor.to(device=device, dtype=parameter.dtype))
+            loaded_keys += 1
     model.lm_head.weight = model.model.embed_tokens.weight
     print(f"Loaded {loaded_keys} text-model tensors from the checkpoint.")
     return model.eval()
@@ -400,14 +508,33 @@ def load_pretrained_text_model(device):
 class GemmaLLM(LLM):
     """Gemma 4 text-generation backend."""
 
-    def __init__(self):
+    def __init__(
+        self,
+        *,
+        attention_payload=None,
+        gelu_payload=None,
+        linear_payload=None,
+        rms_norm_payload=None,
+        rope_payload=None,
+    ):
         if not torch.cuda.is_available():
             raise RuntimeError("Gemma text inference requires a CUDA GPU.")
+        self.kernels = GemmaKernelSet(
+            attention_payload=attention_payload,
+            gelu_payload=gelu_payload,
+            linear_payload=linear_payload,
+            rms_norm_payload=rms_norm_payload,
+            rope_payload=rope_payload,
+        )
         self.tokenizer = GemmaTokenizerFast.from_pretrained(
             MODEL_ID,
             cache_dir=MODEL_CACHE_DIR,
         )
-        self.model = load_pretrained_text_model("cuda")
+        self.model = load_pretrained_text_model("cuda", self.kernels)
+
+    @classmethod
+    def from_custom_ptx(cls, **payloads):
+        return cls(**payloads)
 
     @classmethod
     def get_kernel_classes(cls):
@@ -434,52 +561,3 @@ class GemmaLLM(LLM):
             output_ids[0, prompt_length:],
             skip_special_tokens=True,
         )
-
-
-Gemma = GemmaLLM
-
-
-if __name__ == "__main__":
-    if not torch.cuda.is_available():
-        raise RuntimeError("Text inference requires a CUDA GPU for this random model.")
-
-    tokenizer = GemmaTokenizerFast.from_pretrained(
-        MODEL_ID, cache_dir=MODEL_CACHE_DIR
-    )
-    model = load_pretrained_text_model("cuda")
-    messages = [
-        {"role": "system", "content": "You are a helpful assistant."},
-        {
-            "role": "user",
-            "content": (
-                "A farmer must transport a wolf, a goat, and a cabbage across a "
-                "river using a boat that carries the farmer and one item. The wolf "
-                "cannot be left with the goat, and the goat cannot be left with the "
-                "cabbage. Work through the solution carefully, explain each crossing, "
-                "and verify why every intermediate state is safe."
-            ),
-        },
-    ]
-    input_ids = tokenizer.apply_chat_template(
-        messages,
-        tokenize=True,
-        add_generation_prompt=True,
-        enable_thinking=True,
-        return_tensors="pt",
-    )
-    if not isinstance(input_ids, torch.Tensor):
-        input_ids = input_ids["input_ids"]
-    input_ids = input_ids.to("cuda")
-    torch.cuda.synchronize()
-    start_time = perf_counter()
-    output_ids = model.generate(input_ids, max_new_tokens=512)
-    torch.cuda.synchronize()
-    elapsed_time = perf_counter() - start_time
-    generated_tokens = output_ids.shape[-1] - input_ids.shape[-1]
-    response = tokenizer.decode(
-        output_ids[0, input_ids.shape[-1] :], skip_special_tokens=True
-    )
-    print(response)
-    print(f"Generation speed: {generated_tokens / elapsed_time:.2f} tokens/second")
-
-    print(model)

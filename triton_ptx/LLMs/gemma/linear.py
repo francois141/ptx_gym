@@ -4,7 +4,6 @@ import torch
 import triton
 import triton.language as tl
 from torch.nn import functional
-
 from triton_ptx.kernels.base import TritonPTXKernel
 
 

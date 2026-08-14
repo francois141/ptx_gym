@@ -2,7 +2,6 @@
 
 import torch
 import triton.language as tl
-
 from triton_ptx.kernels.base import TritonPTXKernel
 
 
@@ -10,7 +9,7 @@ class GemmaRoPEKernel(TritonPTXKernel):
     """Gemma local-attention rotary-position-embedding kernel."""
 
     def __init__(self, *, ptx=None):
-        self.block_size = 256
+        self.block_size = 512
         self.num_warps = 4
         self.constexpr_values = {"BLOCK_SIZE": self.block_size}
         self.init_compiled_kernels(ptx=ptx)
@@ -27,6 +26,7 @@ class GemmaRoPEKernel(TritonPTXKernel):
     ):
         row = tl.program_id(axis=0)
         feature_offsets = tl.arange(0, BLOCK_SIZE)
+        feature_mask = feature_offsets < head_dim
         half_head_dim = head_dim // 2
         is_first_half = feature_offsets < half_head_dim
         paired_offsets = tl.where(
@@ -35,31 +35,34 @@ class GemmaRoPEKernel(TritonPTXKernel):
             feature_offsets - half_head_dim,
         )
         input_offsets = row * head_dim + feature_offsets
-        paired_values = tl.load(input_ptr + row * head_dim + paired_offsets)
-        values = tl.load(input_ptr + input_offsets)
+        paired_values = tl.load(
+            input_ptr + row * head_dim + paired_offsets,
+            mask=feature_mask,
+            other=0.0,
+        )
+        values = tl.load(input_ptr + input_offsets, mask=feature_mask, other=0.0)
         rotated_values = tl.where(is_first_half, -paired_values, paired_values)
         position = row % sequence_length
         rope_offsets = position * head_dim + feature_offsets
-        cos_values = tl.load(cos_ptr + rope_offsets)
-        sin_values = tl.load(sin_ptr + rope_offsets)
+        cos_values = tl.load(cos_ptr + rope_offsets, mask=feature_mask)
+        sin_values = tl.load(sin_ptr + rope_offsets, mask=feature_mask)
         tl.store(
             output_ptr + input_offsets,
             values * cos_values + rotated_values * sin_values,
+            mask=feature_mask,
         )
 
     def get_random_input(self, fixed: bool = False):
-        hidden_states = torch.rand(
-            (1, 1, 16, 256), device="cuda", dtype=torch.bfloat16
-        )
-        frequencies = torch.rand((16, 256), device="cuda", dtype=torch.bfloat16)
+        hidden_states = torch.rand((1, 1, 1, 256), device="cuda", dtype=torch.bfloat16)
+        frequencies = torch.rand((1, 256), device="cuda", dtype=torch.bfloat16)
         return hidden_states, frequencies, frequencies.clone()
 
     def get_shape_information(self) -> str:
         return (
-            "- input_ptr: bfloat16 tensor with shape (1, 1, 16, 256)\n"
-            "- cos_ptr: bfloat16 tensor with shape (16, 256)\n"
-            "- sin_ptr: bfloat16 tensor with shape (16, 256)\n"
-            "- output_ptr: bfloat16 tensor with shape (1, 1, 16, 256)"
+            "- input_ptr: bfloat16 tensor with shape (1, 1, 1, 256)\n"
+            "- cos_ptr: bfloat16 tensor with shape (1, 256)\n"
+            "- sin_ptr: bfloat16 tensor with shape (1, 256)\n"
+            "- output_ptr: bfloat16 tensor with shape (1, 1, 1, 256)"
         )
 
     def forward_triton(self, inputs, ptx=False):
@@ -72,11 +75,8 @@ class GemmaRoPEKernel(TritonPTXKernel):
         )
         assert cos.is_cuda and sin.is_cuda, "RoPE frequencies must be CUDA tensors."
         assert (
-            cos.device == hidden_states.device
-            and sin.device == hidden_states.device
-        ), (
-            "RoPE frequencies must be on the input device."
-        )
+            cos.device == hidden_states.device and sin.device == hidden_states.device
+        ), "RoPE frequencies must be on the input device."
         assert cos.dtype == hidden_states.dtype and sin.dtype == hidden_states.dtype, (
             "RoPE frequencies must match the input dtype."
         )
@@ -90,9 +90,7 @@ class GemmaRoPEKernel(TritonPTXKernel):
             f"RoPE sine frequencies must have shape ({sequence_length}, {head_dim})."
         )
         assert head_dim % 2 == 0, "RoPE head dimension must be even."
-        assert head_dim == self.block_size, (
-            f"RoPE head dimension must equal {self.block_size}; received {head_dim}."
-        )
+        assert head_dim in (256, 512), "Gemma RoPE head dimension must be 256 or 512."
         output = torch.empty_like(hidden_states)
         launch_kernel = self.compiled_kernel_ptx if ptx else self.compiled_kernel
         launch_kwargs = (

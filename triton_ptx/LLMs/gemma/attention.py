@@ -4,7 +4,6 @@ import torch
 import triton
 import triton.language as tl
 from torch.nn import functional
-
 from triton_ptx.kernels.base import TritonPTXKernel
 
 
@@ -14,7 +13,7 @@ class GemmaAttentionKernel(TritonPTXKernel):
     def __init__(self, *, ptx=None):
         self.block_m = 16
         self.block_n = 32
-        self.block_d = 256
+        self.block_d = 512
         self.num_warps = 4
         self.constexpr_values = {
             "BLOCK_M": self.block_m,
@@ -29,7 +28,8 @@ class GemmaAttentionKernel(TritonPTXKernel):
         key_ptr,
         value_ptr,
         output_ptr,
-        sequence_length,
+        query_length,
+        key_value_length,
         num_heads,
         window_size,
         query_batch_stride,
@@ -41,7 +41,7 @@ class GemmaAttentionKernel(TritonPTXKernel):
         value_batch_stride,
         value_head_stride,
         value_row_stride,
-        HEAD_DIM: tl.constexpr,
+        head_dim,
         BLOCK_M: tl.constexpr,
         BLOCK_N: tl.constexpr,
         BLOCK_D: tl.constexpr,
@@ -50,9 +50,8 @@ class GemmaAttentionKernel(TritonPTXKernel):
         batch_head = tl.program_id(axis=1)
         query_offsets = query_block * BLOCK_M + tl.arange(0, BLOCK_M)
         key_offsets = tl.arange(0, BLOCK_N)
-        feature_block = tl.program_id(axis=2)
         feature_offsets = tl.arange(0, BLOCK_D)
-        output_feature_offsets = feature_block * BLOCK_D + feature_offsets
+        feature_mask = feature_offsets < head_dim
         batch_index = batch_head // num_heads
         head_index = batch_head % num_heads
         query_batch_head_offset = (
@@ -64,40 +63,37 @@ class GemmaAttentionKernel(TritonPTXKernel):
         value_batch_head_offset = (
             batch_index * value_batch_stride + head_index * value_head_stride
         )
-        output_batch_head_offset = batch_head * sequence_length * HEAD_DIM
-        query_mask = query_offsets < sequence_length
+        output_batch_head_offset = batch_head * query_length * head_dim
+        query_mask = query_offsets < query_length
         max_scores = tl.full((BLOCK_M,), -float("inf"), tl.float32)
         score_sums = tl.zeros((BLOCK_M,), tl.float32)
         accumulator = tl.zeros((BLOCK_M, BLOCK_D), tl.float32)
 
-        for key_block_start in tl.range(0, sequence_length, BLOCK_N):
+        for key_block_start in tl.range(0, key_value_length, BLOCK_N):
             current_key_offsets = key_block_start + key_offsets
-            key_mask = current_key_offsets < sequence_length
-            scores = tl.zeros((BLOCK_M, BLOCK_N), tl.float32)
-            for feature_block_start in tl.range(0, HEAD_DIM, BLOCK_D):
-                queries = tl.load(
-                    query_ptr
-                    + query_batch_head_offset
-                    + query_offsets[:, None] * query_row_stride
-                    + feature_block_start
-                    + feature_offsets[None, :],
-                    mask=query_mask[:, None],
-                    other=0.0,
-                )
-                keys = tl.load(
-                    key_ptr
-                    + key_batch_head_offset
-                    + current_key_offsets[:, None] * key_row_stride
-                    + feature_block_start
-                    + feature_offsets[None, :],
-                    mask=key_mask[:, None],
-                    other=0.0,
-                )
-                scores += tl.dot(queries, tl.trans(keys))
-            causal_mask = query_offsets[:, None] >= current_key_offsets[None, :]
+            key_mask = current_key_offsets < key_value_length
+            queries = tl.load(
+                query_ptr
+                + query_batch_head_offset
+                + query_offsets[:, None] * query_row_stride
+                + feature_offsets[None, :],
+                mask=query_mask[:, None] & feature_mask[None, :],
+                other=0.0,
+            )
+            keys = tl.load(
+                key_ptr
+                + key_batch_head_offset
+                + current_key_offsets[:, None] * key_row_stride
+                + feature_offsets[None, :],
+                mask=key_mask[:, None] & feature_mask[None, :],
+                other=0.0,
+            )
+            scores = tl.dot(queries, tl.trans(keys))
+            query_positions = query_offsets + key_value_length - query_length
+            causal_mask = query_positions[:, None] >= current_key_offsets[None, :]
             window_mask = (window_size == 0) | (
                 current_key_offsets[None, :]
-                >= query_offsets[:, None] - window_size + 1
+                >= query_positions[:, None] - window_size + 1
             )
             scores = tl.where(
                 causal_mask & window_mask & key_mask[None, :], scores, -float("inf")
@@ -111,8 +107,8 @@ class GemmaAttentionKernel(TritonPTXKernel):
                 value_ptr
                 + value_batch_head_offset
                 + current_key_offsets[:, None] * value_row_stride
-                + output_feature_offsets[None, :],
-                mask=key_mask[:, None],
+                + feature_offsets[None, :],
+                mask=key_mask[:, None] & feature_mask[None, :],
                 other=0.0,
             )
             accumulator = accumulator * rescale[:, None] + tl.dot(
@@ -123,31 +119,33 @@ class GemmaAttentionKernel(TritonPTXKernel):
         tl.store(
             output_ptr
             + output_batch_head_offset
-            + query_offsets[:, None] * HEAD_DIM
-            + output_feature_offsets[None, :],
+            + query_offsets[:, None] * head_dim
+            + feature_offsets[None, :],
             accumulator / score_sums[:, None],
-            mask=query_mask[:, None],
+            mask=query_mask[:, None] & feature_mask[None, :],
         )
 
     def get_random_input(self, fixed: bool = False):
-        tensors = tuple(
+        query = torch.rand((1, 8, 1, 256), device="cuda", dtype=torch.bfloat16)
+        key_value = tuple(
             torch.rand((1, 8, 32, 256), device="cuda", dtype=torch.bfloat16)
-            for _ in range(3)
+            for _ in range(2)
         )
-        return *tensors, 16
+        return query, *key_value, 16
 
     def get_shape_information(self) -> str:
         return (
-            "- query_ptr, key_ptr, value_ptr: bfloat16 tensors with shape "
-            "(1, 8, sequence_length, head_dim)\n"
-            "- output_ptr: bfloat16 tensor with shape "
-            "(1, 8, sequence_length, head_dim)\n"
+            "- query_ptr: bfloat16 tensor with shape (1, 8, 1, 256)\n"
+            "- key_ptr, value_ptr: bfloat16 tensors with shape "
+            "(1, 8, key_value_length, 256)\n"
+            "- output_ptr: bfloat16 tensor with shape (1, 8, 1, 256)\n"
             "- window_size: 0 for causal attention, otherwise the local window size"
         )
 
     def forward_triton(self, inputs, ptx=False):
         query_states, key_states, value_states, window_size = inputs
-        batch_size, num_heads, sequence_length, head_dim = query_states.shape
+        batch_size, num_heads, query_length, head_dim = query_states.shape
+        key_value_length = key_states.shape[-2]
         assert query_states.is_cuda, "Attention requires CUDA queries."
         assert key_states.is_cuda and value_states.is_cuda, (
             "Attention requires CUDA keys and values."
@@ -164,10 +162,19 @@ class GemmaAttentionKernel(TritonPTXKernel):
         assert all(tensor.is_contiguous() for tensor in inputs[:3]), (
             "Attention inputs must be contiguous."
         )
-        assert key_states.shape == query_states.shape == value_states.shape, (
-            "Attention keys and values must have the same shape as queries."
+        assert key_states.shape == value_states.shape, (
+            "Attention keys and values must have the same shape."
         )
-        assert sequence_length > 0, "Attention sequence length must be positive."
+        assert key_states.shape[:2] == (batch_size, num_heads), (
+            "Attention keys must match the query batch and head dimensions."
+        )
+        assert key_states.shape[-1] == head_dim, (
+            "Attention keys must match the query head dimension."
+        )
+        assert 0 < query_length <= key_value_length, (
+            "Attention query length must be positive and no greater than the "
+            "key/value length."
+        )
         assert head_dim in (256, 512), (
             "Gemma attention head dimension must be 256 or 512."
         )
@@ -181,16 +188,17 @@ class GemmaAttentionKernel(TritonPTXKernel):
         )
         kernel = launch_kernel[
             (
-                triton.cdiv(sequence_length, self.block_m),
+                triton.cdiv(query_length, self.block_m),
                 batch_size * num_heads,
-                triton.cdiv(head_dim, self.block_d),
+                1,
             )
         ](
             query_states,
             key_states,
             value_states,
             output,
-            sequence_length=sequence_length,
+            query_length=query_length,
+            key_value_length=key_value_length,
             num_heads=num_heads,
             window_size=window_size,
             query_batch_stride=query_states.stride(0),
@@ -202,7 +210,7 @@ class GemmaAttentionKernel(TritonPTXKernel):
             value_batch_stride=value_states.stride(0),
             value_head_stride=value_states.stride(1),
             value_row_stride=value_states.stride(2),
-            HEAD_DIM=head_dim,
+            head_dim=head_dim,
             BLOCK_M=self.block_m,
             BLOCK_N=self.block_n,
             BLOCK_D=self.block_d,
@@ -212,19 +220,23 @@ class GemmaAttentionKernel(TritonPTXKernel):
 
     def forward_torch(self, inputs):
         query_states, key_states, value_states, window_size = inputs
-        attention_mask = None
+        query_length = query_states.shape[-2]
+        key_value_length = key_states.shape[-2]
+        query_positions = torch.arange(
+            key_value_length - query_length,
+            key_value_length,
+            device=query_states.device,
+        )
+        key_positions = torch.arange(key_value_length, device=query_states.device)
+        attention_mask = key_positions[None, :] <= query_positions[:, None]
         if window_size:
-            sequence_length = query_states.shape[-2]
-            positions = torch.arange(sequence_length, device=query_states.device)
-            attention_mask = positions[None, :] >= (
-                positions[:, None] - window_size + 1
+            attention_mask &= key_positions[None, :] >= (
+                query_positions[:, None] - window_size + 1
             )
-            attention_mask &= positions[None, :] <= positions[:, None]
         return functional.scaled_dot_product_attention(
             query_states,
             key_states,
             value_states,
             attn_mask=attention_mask,
-            is_causal=attention_mask is None,
             scale=1.0,
         )

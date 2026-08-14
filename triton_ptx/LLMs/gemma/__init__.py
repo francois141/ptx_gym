@@ -3,18 +3,16 @@
 from .attention import GemmaAttentionKernel
 from .gelu import GemmaGELUKernel
 from .linear import GemmaLinearKernel
-from .model import Gemma4ForConditionalGeneration, GemmaLLM
+from .model import Gemma4ForConditionalGeneration, GemmaKernelSet, GemmaLLM
 from .rms_norm import GemmaRMSNormKernel
 from .rope import GemmaRoPEKernel
 
-Gemma = GemmaLLM
-
 __all__ = [
-    "Gemma",
-    "GemmaAttentionKernel",
     "Gemma4ForConditionalGeneration",
-    "GemmaLLM",
+    "GemmaAttentionKernel",
     "GemmaGELUKernel",
+    "GemmaKernelSet",
+    "GemmaLLM",
     "GemmaLinearKernel",
     "GemmaRMSNormKernel",
     "GemmaRoPEKernel",

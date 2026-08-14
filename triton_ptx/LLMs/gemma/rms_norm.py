@@ -2,7 +2,6 @@
 
 import torch
 import triton.language as tl
-
 from triton_ptx.kernels.base import TritonPTXKernel
 
 
