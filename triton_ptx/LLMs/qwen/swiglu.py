@@ -17,14 +17,12 @@ class QwenSwiGLUKernel(TritonPTXKernel):
         gate_ptr,
         up_ptr,
         output_ptr,
-        element_count,
         BLOCK_SIZE: tl.constexpr,
     ):
         offsets = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-        mask = offsets < element_count
-        gate = tl.load(gate_ptr + offsets, mask=mask).to(tl.float32)
-        up = tl.load(up_ptr + offsets, mask=mask).to(tl.float32)
-        tl.store(output_ptr + offsets, gate * tl.sigmoid(gate) * up, mask=mask)
+        gate = tl.load(gate_ptr + offsets).to(tl.float32)
+        up = tl.load(up_ptr + offsets).to(tl.float32)
+        tl.store(output_ptr + offsets, gate * tl.sigmoid(gate) * up)
 
     def get_random_input(self, fixed=False):
         return tuple(
@@ -49,6 +47,10 @@ class QwenSwiGLUKernel(TritonPTXKernel):
         assert gate.dtype in (torch.float16, torch.bfloat16), (
             "SwiGLU inputs must use float16 or bfloat16."
         )
+        assert gate.numel() % self.block_size == 0, (
+            f"SwiGLU input size must be divisible by {self.block_size}; "
+            f"received {gate.numel()} elements."
+        )
         output = torch.empty_like(gate)
         launch_kernel = self.compiled_kernel_ptx if ptx else self.compiled_kernel
         launch_kwargs = (
@@ -58,7 +60,6 @@ class QwenSwiGLUKernel(TritonPTXKernel):
             gate,
             up,
             output,
-            gate.numel(),
             BLOCK_SIZE=self.block_size,
             **launch_kwargs,
         )

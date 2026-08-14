@@ -65,8 +65,7 @@ class QwenLinearKernel(TritonPTXKernel):
         tl.store(
             output_ptrs,
             accumulator,
-            mask=(row_offsets[:, None] < row_count)
-            & (output_offsets[None, :] < output_features),
+            mask=row_offsets[:, None] < row_count,
         )
 
     def get_random_input(self, fixed=False):

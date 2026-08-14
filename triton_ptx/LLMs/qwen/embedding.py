@@ -22,17 +22,9 @@ class QwenEmbeddingKernel(TritonPTXKernel):
     ):
         token_index = tl.program_id(0)
         feature_offsets = tl.program_id(1) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-        mask = feature_offsets < hidden_size
         token_id = tl.load(input_ids_ptr + token_index)
-        values = tl.load(
-            weight_ptr + token_id * hidden_size + feature_offsets,
-            mask=mask,
-        )
-        tl.store(
-            output_ptr + token_index * hidden_size + feature_offsets,
-            values,
-            mask=mask,
-        )
+        values = tl.load(weight_ptr + token_id * hidden_size + feature_offsets)
+        tl.store(output_ptr + token_index * hidden_size + feature_offsets, values)
 
     def get_random_input(self, fixed=False):
         return (
@@ -61,6 +53,10 @@ class QwenEmbeddingKernel(TritonPTXKernel):
         )
         assert input_ids.device == weight.device, (
             "Token IDs and embedding weights must be on one device."
+        )
+        assert hidden_size % self.block_size == 0, (
+            f"Embedding hidden size must be divisible by {self.block_size}; "
+            f"received {hidden_size}."
         )
         output = torch.empty(
             (*input_ids.shape, hidden_size),

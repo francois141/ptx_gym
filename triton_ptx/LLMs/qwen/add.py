@@ -16,14 +16,12 @@ class QwenAddKernel(TritonPTXKernel):
         left_ptr,
         right_ptr,
         output_ptr,
-        element_count,
         BLOCK_SIZE: tl.constexpr,
     ):
         offsets = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-        mask = offsets < element_count
-        left = tl.load(left_ptr + offsets, mask=mask)
-        right = tl.load(right_ptr + offsets, mask=mask)
-        tl.store(output_ptr + offsets, left + right, mask=mask)
+        left = tl.load(left_ptr + offsets)
+        right = tl.load(right_ptr + offsets)
+        tl.store(output_ptr + offsets, left + right)
 
     def get_random_input(self, fixed=False):
         return tuple(
@@ -45,6 +43,10 @@ class QwenAddKernel(TritonPTXKernel):
         assert left.shape == right.shape, "Add inputs must have the same shape."
         assert left.dtype == right.dtype, "Add inputs must have the same dtype."
         assert left.device == right.device, "Add inputs must be on one device."
+        assert left.numel() % self.block_size == 0, (
+            f"Add input size must be divisible by {self.block_size}; "
+            f"received {left.numel()} elements."
+        )
         output = torch.empty_like(left)
         launch_kernel = self.compiled_kernel_ptx if ptx else self.compiled_kernel
         launch_kwargs = (
@@ -54,7 +56,6 @@ class QwenAddKernel(TritonPTXKernel):
             left,
             right,
             output,
-            left.numel(),
             BLOCK_SIZE=self.block_size,
             **launch_kwargs,
         )
