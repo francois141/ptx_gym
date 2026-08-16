@@ -65,25 +65,17 @@ class ApertusKernelSet:
         rope_payload=None,
         xielu_payload=None,
     ):
-        self.causal_attention_payload = self.normalize_payload(
-            causal_attention_payload
-        )
+        self.causal_attention_payload = self.normalize_payload(causal_attention_payload)
         self.linear_payload = self.normalize_payload(linear_payload)
         self.rms_norm_128_payload = self.normalize_payload(rms_norm_128_payload)
         self.rms_norm_4096_payload = self.normalize_payload(rms_norm_4096_payload)
         self.rope_payload = self.normalize_payload(rope_payload)
         self.xielu_payload = self.normalize_payload(xielu_payload)
 
-        self.causal_attention = CausalAttentionKernel(
-            ptx=self.causal_attention_payload
-        )
+        self.causal_attention = CausalAttentionKernel(ptx=self.causal_attention_payload)
         self.linear = LinearKernel(ptx=self.linear_payload)
-        self.rms_norm_128 = ApertusRMSNorm128Kernel(
-            ptx=self.rms_norm_128_payload
-        )
-        self.rms_norm_4096 = ApertusRMSNorm4096Kernel(
-            ptx=self.rms_norm_4096_payload
-        )
+        self.rms_norm_128 = ApertusRMSNorm128Kernel(ptx=self.rms_norm_128_payload)
+        self.rms_norm_4096 = ApertusRMSNorm4096Kernel(ptx=self.rms_norm_4096_payload)
         self.rope = RoPEKernel(ptx=self.rope_payload)
         self.xielu = XIELUKernel(ptx=self.xielu_payload)
 
@@ -96,6 +88,22 @@ class ApertusKernelSet:
     @staticmethod
     def uses_custom_ptx(kernel):
         return kernel.compiled_kernel_ptx is not None
+
+
+class Apertus1p5TextLinear(torch.nn.Module):
+    def __init__(self, input_features, output_features, device, dtype, kernels):
+        super().__init__()
+        self.weight = torch.nn.Parameter(
+            torch.empty(output_features, input_features, device=device, dtype=dtype)
+        )
+        self.kernel = kernels.linear
+
+    def forward(self, hidden_states):
+        output, _ = self.kernel.forward_triton(
+            (hidden_states, self.weight),
+            ptx=ApertusKernelSet.uses_custom_ptx(self.kernel),
+        )
+        return output
 
 
 class Apertus1p5TextRMSNorm(torch.nn.Module):
@@ -201,25 +209,25 @@ class Apertus1p5TextAttention(torch.nn.Module):
     def __init__(self, device, dtype, kernels=None):
         super().__init__()
         self.kernels = kernels or ApertusKernelSet()
-        self.q_proj = torch.nn.Linear(
-            HIDDEN_SIZE, HIDDEN_SIZE, bias=False, device=device, dtype=dtype
+        self.q_proj = Apertus1p5TextLinear(
+            HIDDEN_SIZE, HIDDEN_SIZE, device, dtype, self.kernels
         )
-        self.k_proj = torch.nn.Linear(
+        self.k_proj = Apertus1p5TextLinear(
             HIDDEN_SIZE,
             NUM_KEY_VALUE_HEADS * HEAD_DIM,
-            bias=False,
-            device=device,
-            dtype=dtype,
+            device,
+            dtype,
+            self.kernels,
         )
-        self.v_proj = torch.nn.Linear(
+        self.v_proj = Apertus1p5TextLinear(
             HIDDEN_SIZE,
             NUM_KEY_VALUE_HEADS * HEAD_DIM,
-            bias=False,
-            device=device,
-            dtype=dtype,
+            device,
+            dtype,
+            self.kernels,
         )
-        self.o_proj = torch.nn.Linear(
-            HIDDEN_SIZE, HIDDEN_SIZE, bias=False, device=device, dtype=dtype
+        self.o_proj = Apertus1p5TextLinear(
+            HIDDEN_SIZE, HIDDEN_SIZE, device, dtype, self.kernels
         )
         self.q_norm = Apertus1p5TextRMSNorm(
             HEAD_DIM, device=device, dtype=dtype, kernels=self.kernels
@@ -277,25 +285,16 @@ class Apertus1p5TextMLP(torch.nn.Module):
     def __init__(self, device, dtype, kernels=None):
         super().__init__()
         self.kernels = kernels or ApertusKernelSet()
-        self.up_proj = torch.nn.Linear(
-            HIDDEN_SIZE, INTERMEDIATE_SIZE, bias=False, device=device, dtype=dtype
+        self.up_proj = Apertus1p5TextLinear(
+            HIDDEN_SIZE, INTERMEDIATE_SIZE, device, dtype, self.kernels
         )
-        self.down_proj = torch.nn.Linear(
-            INTERMEDIATE_SIZE, HIDDEN_SIZE, bias=False, device=device, dtype=dtype
+        self.down_proj = Apertus1p5TextLinear(
+            INTERMEDIATE_SIZE, HIDDEN_SIZE, device, dtype, self.kernels
         )
         self.act_fn = XIELUActivation(device=device, dtype=dtype, kernels=self.kernels)
 
     def forward(self, hidden_states):
-        hidden_states, _ = self.kernels.linear.forward_triton(
-            (hidden_states, self.up_proj.weight),
-            ptx=ApertusKernelSet.uses_custom_ptx(self.kernels.linear),
-        )
-        hidden_states = self.act_fn(hidden_states)
-        output, _ = self.kernels.linear.forward_triton(
-            (hidden_states, self.down_proj.weight),
-            ptx=ApertusKernelSet.uses_custom_ptx(self.kernels.linear),
-        )
-        return output
+        return self.down_proj(self.act_fn(self.up_proj(hidden_states)))
 
 
 class Apertus1p5TextDecoderLayer(torch.nn.Module):
@@ -373,12 +372,12 @@ class Apertus1p5TextForCausalLM(torch.nn.Module):
         super().__init__()
         self.kernels = kernels or ApertusKernelSet()
         self.model = Apertus1p5TextModel(device, dtype, self.kernels)
-        self.lm_head = torch.nn.Linear(
+        self.lm_head = Apertus1p5TextLinear(
             HIDDEN_SIZE,
             OUTPUT_VOCAB_SIZE,
-            bias=False,
-            device=device,
-            dtype=dtype,
+            device,
+            dtype,
+            self.kernels,
         )
 
     def forward(self, input_ids, past_key_values=None, use_cache=False):
