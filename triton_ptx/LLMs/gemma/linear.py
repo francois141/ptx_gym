@@ -11,13 +11,11 @@ class GemmaLinearKernel(TritonPTXKernel):
     """Gemma's bias-free linear projection kernel."""
 
     def __init__(self, *, ptx=None):
-        self.block_m = 1
         self.block_n = 128
         self.block_k = 32
         self.num_warps = 4
         self.num_stages = 4
         self.constexpr_values = {
-            "BLOCK_M": self.block_m,
             "BLOCK_N": self.block_n,
             "BLOCK_K": self.block_k,
         }
@@ -29,42 +27,36 @@ class GemmaLinearKernel(TritonPTXKernel):
         weight_ptr,
         output_ptr,
         input_features,
-        input_row_stride,
-        weight_output_stride,
-        weight_input_stride,
-        output_row_stride,
-        BLOCK_M: tl.constexpr,
+        output_features,
         BLOCK_N: tl.constexpr,
         BLOCK_K: tl.constexpr,
     ):
-        program_m = tl.program_id(0)
-        program_n = tl.program_id(1)
-        row_offsets = program_m * BLOCK_M + tl.arange(0, BLOCK_M)
-        output_offsets = program_n * BLOCK_N + tl.arange(0, BLOCK_N)
+        vector_index = tl.program_id(0)
+        output_offsets = tl.program_id(1) * BLOCK_N + tl.arange(0, BLOCK_N)
         input_offsets = tl.arange(0, BLOCK_K)
-        input_ptrs = (
-            input_ptr + row_offsets[:, None] * input_row_stride + input_offsets[None, :]
-        )
-        weight_ptrs = (
-            weight_ptr
-            + output_offsets[None, :] * weight_output_stride
-            + input_offsets[:, None] * weight_input_stride
-        )
-        accumulator = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+        accumulator = tl.zeros((BLOCK_N,), dtype=tl.float32)
 
-        for _ in tl.range(0, input_features, BLOCK_K):
-            accumulator = tl.dot(
-                tl.load(input_ptrs), tl.load(weight_ptrs), acc=accumulator
+        for reduction_start in tl.range(0, input_features, BLOCK_K):
+            input_values = tl.load(
+                input_ptr
+                + vector_index * input_features
+                + reduction_start
+                + input_offsets
             )
-            input_ptrs += BLOCK_K
-            weight_ptrs += BLOCK_K * weight_input_stride
-
-        output_ptrs = (
-            output_ptr
-            + row_offsets[:, None] * output_row_stride
-            + output_offsets[None, :]
+            weight_values = tl.load(
+                weight_ptr
+                + output_offsets[:, None] * input_features
+                + reduction_start
+                + input_offsets[None, :]
+            )
+            accumulator += tl.sum(
+                weight_values.to(tl.float32) * input_values.to(tl.float32)[None, :],
+                axis=1,
+            )
+        tl.store(
+            output_ptr + vector_index * output_features + output_offsets,
+            accumulator.to(output_ptr.dtype.element_ty),
         )
-        tl.store(output_ptrs, accumulator.to(output_ptr.dtype.element_ty))
 
     def get_random_input(self, fixed: bool = False):
         return (
@@ -109,30 +101,18 @@ class GemmaLinearKernel(TritonPTXKernel):
             device=hidden_states.device,
             dtype=hidden_states.dtype,
         )
-        launch_kernel = self.compiled_kernel_ptx if ptx else self.compiled_kernel
-        launch_kwargs = (
-            self.ptx_launch_kwargs()
-            if ptx
-            else {"num_warps": self.num_warps, "num_stages": self.num_stages}
-        )
-        kernel = launch_kernel[
-            (
-                triton.cdiv(flattened_input.shape[0], self.block_m),
-                triton.cdiv(output_features, self.block_n),
-            )
+        kernel = self.compiled_kernel[
+            (flattened_input.shape[0], triton.cdiv(output_features, self.block_n))
         ](
             flattened_input,
             weight,
             output,
             input_features,
-            flattened_input.stride(0),
-            weight.stride(0),
-            weight.stride(1),
-            output.stride(0),
-            BLOCK_M=self.block_m,
+            output_features,
             BLOCK_N=self.block_n,
             BLOCK_K=self.block_k,
-            **launch_kwargs,
+            num_warps=self.num_warps,
+            num_stages=self.num_stages,
         )
         return output.reshape(*hidden_states.shape[:-1], output_features), kernel
 

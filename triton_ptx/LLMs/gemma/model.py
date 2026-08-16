@@ -178,12 +178,16 @@ class Gemma4TextRotaryEmbedding(torch.nn.Module):
         self.device = device
         self.kernel = (kernels or GemmaKernelSet()).rope
 
-    def forward(self, sequence_length, head_dim, is_local, device, dtype):
+    def forward(
+        self, sequence_length, head_dim, is_local, device, dtype, position_offset=0
+    ):
         base = 10_000 if is_local else 1_000_000
         inverse_frequencies = 1.0 / (
             base ** (torch.arange(0, head_dim, 2, device=device).float() / head_dim)
         )
-        positions = torch.arange(sequence_length, device=device)
+        positions = torch.arange(
+            position_offset, position_offset + sequence_length, device=device
+        )
         frequencies = torch.outer(positions, inverse_frequencies)
         angles = torch.cat((frequencies, frequencies), dim=-1)
         return angles.cos().to(dtype), angles.sin().to(dtype)
@@ -256,8 +260,11 @@ class Gemma4TextAttention(torch.nn.Module):
         )
         self.attention = Gemma4Attention(kernels)
 
-    def forward(self, hidden_states, rotary_embedding, shared_kv_states):
+    def forward(
+        self, hidden_states, rotary_embedding, shared_kv_states, past_key_value=None
+    ):
         batch_size, sequence_length, _ = hidden_states.shape
+        past_length = 0 if past_key_value is None else past_key_value[0].shape[2]
         query_states = (
             self.q_proj(hidden_states)
             .view(batch_size, sequence_length, self.num_heads, self.head_dim)
@@ -271,6 +278,7 @@ class Gemma4TextAttention(torch.nn.Module):
             self.is_local,
             hidden_states.device,
             hidden_states.dtype,
+            past_length,
         )
         query_states = rotary_embedding.apply(query_states, cos, sin)
         if self.is_kv_shared_layer:
@@ -292,8 +300,13 @@ class Gemma4TextAttention(torch.nn.Module):
             )
             key_states = rotary_embedding.apply(self.k_norm(key_states), cos, sin)
             value_states = self.v_norm(value_states)
+            if past_key_value is not None:
+                past_key_states, past_value_states = past_key_value
+                key_states = torch.cat((past_key_states, key_states), dim=2)
+                value_states = torch.cat((past_value_states, value_states), dim=2)
             if self.stores_shared_kv:
                 shared_kv_states[self.is_local] = (key_states, value_states)
+        key_value = (key_states, value_states)
         repeat_factor = self.num_heads // self.num_key_value_heads
         key_states = key_states.repeat_interleave(repeat_factor, dim=1)
         value_states = value_states.repeat_interleave(repeat_factor, dim=1)
@@ -306,7 +319,7 @@ class Gemma4TextAttention(torch.nn.Module):
         attention_output = attention_output.transpose(1, 2).reshape(
             batch_size, sequence_length, -1
         )
-        return self.o_proj(attention_output)
+        return self.o_proj(attention_output), key_value
 
 
 class Gemma4TextMLP(torch.nn.Module):
@@ -371,12 +384,17 @@ class Gemma4TextDecoderLayer(torch.nn.Module):
         self.register_buffer("layer_scalar", torch.ones(1, device=device, dtype=dtype))
 
     def forward(
-        self, hidden_states, layer_embedding, rotary_embedding, shared_kv_states
+        self,
+        hidden_states,
+        layer_embedding,
+        rotary_embedding,
+        shared_kv_states,
+        past_key_value=None,
     ):
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
-        hidden_states = self.self_attn(
-            hidden_states, rotary_embedding, shared_kv_states
+        hidden_states, key_value = self.self_attn(
+            hidden_states, rotary_embedding, shared_kv_states, past_key_value
         )
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = residual + hidden_states
@@ -392,7 +410,7 @@ class Gemma4TextDecoderLayer(torch.nn.Module):
         hidden_states = hidden_states + self.post_per_layer_input_norm(
             self.per_layer_projection(layer_input)
         )
-        return hidden_states * self.layer_scalar
+        return hidden_states * self.layer_scalar, key_value
 
 
 class Gemma4TextModel(torch.nn.Module):
@@ -423,7 +441,9 @@ class Gemma4TextModel(torch.nn.Module):
             256, device=device, dtype=dtype, kernels=kernels
         )
 
-    def forward(self, input_ids):
+    def forward(self, input_ids, past_key_values=None, use_cache=False):
+        if past_key_values is not None and len(past_key_values) != NUM_LAYERS:
+            raise ValueError("past_key_values must contain one entry per layer.")
         hidden_states = self.embed_tokens(input_ids)
         per_layer_embeddings = self.embed_tokens_per_layer(input_ids).reshape(
             *input_ids.shape, NUM_LAYERS, 256
@@ -435,15 +455,32 @@ class Gemma4TextModel(torch.nn.Module):
         )
         per_layer_embeddings = (per_layer_embeddings + per_layer_projection) * 2**-0.5
         shared_kv_states = {}
+        next_key_values = [] if use_cache else None
         for layer_index, layer in enumerate(self.layers):
             layer_embedding = per_layer_embeddings[:, :, layer_index, :]
-            hidden_states = layer(
+            cache_index = (
+                22
+                if layer.self_attn.is_kv_shared_layer and layer.self_attn.is_local
+                else 23
+                if layer.self_attn.is_kv_shared_layer
+                else layer_index
+            )
+            past_key_value = (
+                None if past_key_values is None else past_key_values[cache_index]
+            )
+            hidden_states, key_value = layer(
                 hidden_states,
                 layer_embedding,
                 self.rotary_emb,
                 shared_kv_states,
+                past_key_value,
             )
-        return self.norm(hidden_states)
+            if use_cache:
+                next_key_values.append(key_value)
+        hidden_states = self.norm(hidden_states)
+        if use_cache:
+            return hidden_states, tuple(next_key_values)
+        return hidden_states
 
 
 class Gemma4ForConditionalGeneration(torch.nn.Module):
@@ -460,20 +497,30 @@ class Gemma4ForConditionalGeneration(torch.nn.Module):
         )
         self.lm_head.weight = self.model.embed_tokens.weight
 
-    def forward(self, input_ids):
-        logits = self.lm_head(self.model(input_ids))
+    def forward(self, input_ids, past_key_values=None, use_cache=False):
+        model_output = self.model(input_ids, past_key_values, use_cache)
+        if use_cache:
+            hidden_states, next_key_values = model_output
+            logits = self.lm_head(hidden_states)
+            return torch.tanh(logits / 30) * 30, next_key_values
+        logits = self.lm_head(model_output)
         return torch.tanh(logits / 30) * 30
 
     @torch.inference_mode()
     def generate(self, input_ids, max_new_tokens=32):
         end_token_ids = torch.tensor((1, 106), device=input_ids.device)
-        for _ in range(max_new_tokens):
-            logits = self(input_ids)
+        logits, past_key_values = self(input_ids, use_cache=True)
+        generated_tokens = []
+        for token_index in range(max_new_tokens):
             next_token = logits[:, -1].argmax(dim=-1, keepdim=True)
-            input_ids = torch.cat((input_ids, next_token), dim=-1)
+            generated_tokens.append(next_token)
             if torch.isin(next_token, end_token_ids).all():
                 break
-        return input_ids
+            if token_index + 1 < max_new_tokens:
+                logits, past_key_values = self(
+                    next_token, past_key_values=past_key_values, use_cache=True
+                )
+        return torch.cat((input_ids, *generated_tokens), dim=-1)
 
 
 def load_pretrained_text_model(device, kernels=None):
