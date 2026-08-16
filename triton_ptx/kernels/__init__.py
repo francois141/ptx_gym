@@ -1,18 +1,26 @@
 from .level1_float32 import (
+    Convolution2DKernel,
     DotProductAttentionKernel,
+    FusedGEMMAddGELUKernel,
     GELUKernel,
     MatrixMultiplicationKernel,
+    MatrixVectorMultiplicationKernel,
     ReLUKernel,
+    ReductionSumKernel,
     RMSNormKernel,
     SiLUKernel,
     SoftmaxKernel,
     SwiGLUKernel,
 )
 from .level2_float16 import (
+    Convolution2DFloat16Kernel,
     DotProductAttentionFloat16Kernel,
+    FusedGEMMAddGELUFloat16Kernel,
     GELUFloat16Kernel,
     MatrixMultiplicationFloat16Kernel,
+    MatrixVectorMultiplicationFloat16Kernel,
     ReLUFloat16Kernel,
+    ReductionSumFloat16Kernel,
     RMSNormFloat16Kernel,
     SiLUFloat16Kernel,
     SoftmaxFloat16Kernel,
@@ -55,10 +63,14 @@ def resolve_kernel(name: str) -> type:
 
 
 level1_float32_kernel_list = [
+    Convolution2DKernel,
     DotProductAttentionKernel,
+    FusedGEMMAddGELUKernel,
     GELUKernel,
     MatrixMultiplicationKernel,
+    MatrixVectorMultiplicationKernel,
     ReLUKernel,
+    ReductionSumKernel,
     RMSNormKernel,
     SiLUKernel,
     SoftmaxKernel,
@@ -66,10 +78,14 @@ level1_float32_kernel_list = [
 ]
 
 level2_float16_kernel_list = [
+    Convolution2DFloat16Kernel,
     DotProductAttentionFloat16Kernel,
+    FusedGEMMAddGELUFloat16Kernel,
     GELUFloat16Kernel,
     MatrixMultiplicationFloat16Kernel,
+    MatrixVectorMultiplicationFloat16Kernel,
     ReLUFloat16Kernel,
+    ReductionSumFloat16Kernel,
     RMSNormFloat16Kernel,
     SiLUFloat16Kernel,
     SoftmaxFloat16Kernel,
