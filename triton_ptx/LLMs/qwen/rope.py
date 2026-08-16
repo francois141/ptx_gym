@@ -21,6 +21,7 @@ class QwenRoPEKernel(TritonPTXKernel):
         input_ptr,
         output_ptr,
         sequence_length,
+        position_offset,
         BLOCK_SIZE: tl.constexpr,
     ):
         row = tl.program_id(0)
@@ -42,7 +43,7 @@ class QwenRoPEKernel(TritonPTXKernel):
         inverse_frequency = tl.exp(
             -LOG_ROPE_THETA * (2.0 * frequency_index.to(tl.float32) / BLOCK_SIZE)
         )
-        position = row % sequence_length
+        position = row % sequence_length + position_offset
         angle = position.to(tl.float32) * inverse_frequency
         tl.store(
             output_ptr + input_offsets,
@@ -63,7 +64,7 @@ class QwenRoPEKernel(TritonPTXKernel):
             "- output_ptr: bfloat16 tensor with shape (1, 32, 1, 128)"
         )
 
-    def forward_triton(self, inputs, ptx=False):
+    def forward_triton(self, inputs, ptx=False, position_offset=0):
         hidden_states = inputs
         batch_size, num_heads, sequence_length, head_dim = hidden_states.shape
         assert hidden_states.is_cuda, "RoPE requires CUDA input."
@@ -72,21 +73,28 @@ class QwenRoPEKernel(TritonPTXKernel):
             "RoPE input must use float16 or bfloat16."
         )
         assert head_dim == HEAD_DIM, f"RoPE head dimension must be {HEAD_DIM}."
+        assert position_offset >= 0, "RoPE position offset must be non-negative."
         output = torch.empty_like(hidden_states)
-        launch_kernel = self.compiled_kernel_ptx if ptx else self.compiled_kernel
-        launch_kwargs = (
-            self.ptx_launch_kwargs() if ptx else {"num_warps": self.num_warps}
+        use_custom_ptx = ptx and position_offset == 0
+        launch_kernel = (
+            self.compiled_kernel_ptx if use_custom_ptx else self.compiled_kernel
         )
+        launch_kwargs = (
+            self.ptx_launch_kwargs()
+            if use_custom_ptx
+            else {"num_warps": self.num_warps}
+        )
+        kernel_args = (hidden_states, output, sequence_length)
+        if not use_custom_ptx:
+            kernel_args += (position_offset,)
         kernel = launch_kernel[(batch_size * num_heads * sequence_length,)](
-            hidden_states,
-            output,
-            sequence_length,
+            *kernel_args,
             BLOCK_SIZE=self.block_size,
             **launch_kwargs,
         )
         return output, kernel
 
-    def forward_torch(self, inputs):
+    def forward_torch(self, inputs, position_offset=0):
         hidden_states = inputs
         sequence_length = hidden_states.shape[-2]
         inverse_frequencies = 1.0 / (
@@ -107,7 +115,8 @@ class QwenRoPEKernel(TritonPTXKernel):
                 sequence_length,
                 device=hidden_states.device,
                 dtype=torch.float32,
-            ),
+            )
+            + position_offset,
             inverse_frequencies,
         )
         angles = torch.cat((frequencies, frequencies), dim=-1)
