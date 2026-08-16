@@ -7,13 +7,11 @@ from triton_ptx.kernels.base import TritonPTXKernel
 
 class MarinLinearKernel(TritonPTXKernel):
     def __init__(self, *, ptx=None):
-        self.block_m = 16
         self.block_n = 64
         self.block_k = 32
         self.num_warps = 4
         self.num_stages = 3
         self.constexpr_values = {
-            "BLOCK_M": self.block_m,
             "BLOCK_N": self.block_n,
             "BLOCK_K": self.block_k,
         }
@@ -24,46 +22,36 @@ class MarinLinearKernel(TritonPTXKernel):
         input_ptr,
         weight_ptr,
         output_ptr,
-        row_count,
         input_features,
         output_features,
-        BLOCK_M: tl.constexpr,
         BLOCK_N: tl.constexpr,
         BLOCK_K: tl.constexpr,
     ):
-        row_offsets = tl.program_id(0) * BLOCK_M + tl.arange(0, BLOCK_M)
+        vector_index = tl.program_id(0)
         output_offsets = tl.program_id(1) * BLOCK_N + tl.arange(0, BLOCK_N)
         reduction_offsets = tl.arange(0, BLOCK_K)
-        input_ptrs = (
-            input_ptr
-            + row_offsets[:, None] * input_features
-            + reduction_offsets[None, :]
-        )
-        weight_ptrs = (
-            weight_ptr
-            + output_offsets[None, :] * input_features
-            + reduction_offsets[:, None]
-        )
-        accumulator = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-        for _ in tl.range(0, input_features, BLOCK_K):
+        accumulator = tl.zeros((BLOCK_N,), dtype=tl.float32)
+
+        for reduction_start in tl.range(0, input_features, BLOCK_K):
             input_values = tl.load(
-                input_ptrs,
-                mask=row_offsets[:, None] < row_count,
-                other=0.0,
+                input_ptr
+                + vector_index * input_features
+                + reduction_start
+                + reduction_offsets
             )
-            weight_values = tl.load(weight_ptrs)
-            accumulator += tl.dot(input_values, weight_values)
-            input_ptrs += BLOCK_K
-            weight_ptrs += BLOCK_K
-        output_ptrs = (
-            output_ptr
-            + row_offsets[:, None] * output_features
-            + output_offsets[None, :]
-        )
+            weight_values = tl.load(
+                weight_ptr
+                + output_offsets[:, None] * input_features
+                + reduction_start
+                + reduction_offsets[None, :]
+            )
+            accumulator += tl.sum(
+                weight_values.to(tl.float32) * input_values.to(tl.float32)[None, :],
+                axis=1,
+            )
         tl.store(
-            output_ptrs,
-            accumulator,
-            mask=row_offsets[:, None] < row_count,
+            output_ptr + vector_index * output_features + output_offsets,
+            accumulator.to(output_ptr.dtype.element_ty),
         )
 
     def get_random_input(self, fixed=False):
@@ -112,28 +100,18 @@ class MarinLinearKernel(TritonPTXKernel):
             device=hidden_states.device,
             dtype=hidden_states.dtype,
         )
-        launch_kernel = self.compiled_kernel_ptx if ptx else self.compiled_kernel
-        launch_kwargs = (
-            self.ptx_launch_kwargs()
-            if ptx
-            else {"num_warps": self.num_warps, "num_stages": self.num_stages}
-        )
-        kernel = launch_kernel[
-            (
-                triton.cdiv(flattened_input.shape[0], self.block_m),
-                triton.cdiv(output_features, self.block_n),
-            )
+        kernel = self.compiled_kernel[
+            (flattened_input.shape[0], triton.cdiv(output_features, self.block_n))
         ](
             flattened_input,
             weight,
             output,
-            flattened_input.shape[0],
             input_features,
             output_features,
-            BLOCK_M=self.block_m,
             BLOCK_N=self.block_n,
             BLOCK_K=self.block_k,
-            **launch_kwargs,
+            num_warps=self.num_warps,
+            num_stages=self.num_stages,
         )
         shape = (*hidden_states.shape[:-1], output_features)
         return output.reshape(shape), kernel

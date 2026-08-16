@@ -165,7 +165,7 @@ class MarinAttention(torch.nn.Module):
             kernels,
         )
 
-    def forward(self, hidden_states):
+    def forward(self, hidden_states, past_key_value=None):
         batch_size, sequence_length, _ = hidden_states.shape
         query_states = (
             self.q_proj(hidden_states)
@@ -203,11 +203,17 @@ class MarinAttention(torch.nn.Module):
         query_states, _ = self.kernels.rope.forward_triton(
             query_states,
             ptx=MarinKernelSet.uses_custom_ptx(self.kernels.rope),
+            position_offset=0 if past_key_value is None else past_key_value[0].shape[2],
         )
         key_states, _ = self.kernels.rope.forward_triton(
             key_states,
             ptx=MarinKernelSet.uses_custom_ptx(self.kernels.rope),
+            position_offset=0 if past_key_value is None else past_key_value[0].shape[2],
         )
+        if past_key_value is not None:
+            past_key_states, past_value_states = past_key_value
+            key_states = torch.cat((past_key_states, key_states), dim=2)
+            value_states = torch.cat((past_value_states, value_states), dim=2)
         attention_output, _ = self.kernels.causal_attention.forward_triton(
             (query_states, key_states, value_states),
             ptx=MarinKernelSet.uses_custom_ptx(self.kernels.causal_attention),
@@ -217,7 +223,7 @@ class MarinAttention(torch.nn.Module):
             sequence_length,
             NUM_ATTENTION_HEADS * HEAD_DIM,
         )
-        return self.o_proj(attention_output.contiguous())
+        return self.o_proj(attention_output.contiguous()), (key_states, value_states)
 
 
 class MarinMLP(torch.nn.Module):
@@ -272,13 +278,15 @@ class MarinDecoderLayer(torch.nn.Module):
         )
         return output
 
-    def forward(self, hidden_states):
+    def forward(self, hidden_states, past_key_value=None):
         residual = hidden_states
-        hidden_states = self.self_attn(self.input_layernorm(hidden_states))
+        hidden_states, key_value = self.self_attn(
+            self.input_layernorm(hidden_states), past_key_value
+        )
         hidden_states = self.add_residual(residual, hidden_states)
         residual = hidden_states
         hidden_states = self.mlp(self.post_attention_layernorm(hidden_states))
-        return self.add_residual(residual, hidden_states)
+        return self.add_residual(residual, hidden_states), key_value
 
 
 class MarinModel(torch.nn.Module):
@@ -290,11 +298,20 @@ class MarinModel(torch.nn.Module):
         )
         self.norm = MarinRMSNorm(device, dtype, kernels)
 
-    def forward(self, input_ids):
+    def forward(self, input_ids, past_key_values=None, use_cache=False):
+        if past_key_values is not None and len(past_key_values) != NUM_LAYERS:
+            raise ValueError("past_key_values must contain one entry per layer.")
         hidden_states = self.embed_tokens(input_ids)
-        for layer in self.layers:
-            hidden_states = layer(hidden_states)
-        return self.norm(hidden_states[:, -1:, :].contiguous())
+        next_key_values = [] if use_cache else None
+        for index, layer in enumerate(self.layers):
+            past_key_value = None if past_key_values is None else past_key_values[index]
+            hidden_states, key_value = layer(hidden_states, past_key_value)
+            if use_cache:
+                next_key_values.append(key_value)
+        hidden_states = self.norm(hidden_states[:, -1:, :].contiguous())
+        if use_cache:
+            return hidden_states, tuple(next_key_values)
+        return hidden_states
 
 
 def sample_next_token(logits):
@@ -320,17 +337,27 @@ class MarinForCausalLM(torch.nn.Module):
             self.kernels,
         )
 
-    def forward(self, input_ids):
-        return self.lm_head(self.model(input_ids))
+    def forward(self, input_ids, past_key_values=None, use_cache=False):
+        model_output = self.model(input_ids, past_key_values, use_cache)
+        if not use_cache:
+            return self.lm_head(model_output)
+        hidden_states, next_key_values = model_output
+        return self.lm_head(hidden_states), next_key_values
 
     @torch.inference_mode()
     def generate(self, input_ids, max_new_tokens=100):
-        for _ in range(max_new_tokens):
-            next_token = sample_next_token(self(input_ids))
-            input_ids = torch.cat((input_ids, next_token), dim=-1)
+        logits, past_key_values = self(input_ids, use_cache=True)
+        generated_tokens = []
+        for token_index in range(max_new_tokens):
+            next_token = sample_next_token(logits)
+            generated_tokens.append(next_token)
             if next_token.item() == EOS_TOKEN_ID:
                 break
-        return input_ids
+            if token_index + 1 < max_new_tokens:
+                logits, past_key_values = self(
+                    next_token, past_key_values=past_key_values, use_cache=True
+                )
+        return torch.cat((input_ids, *generated_tokens), dim=-1)
 
 
 def resolve_model_directory():
