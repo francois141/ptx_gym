@@ -1,14 +1,17 @@
 import torch
-import torch.nn.functional as functional
+import triton
 import triton.language as tl
-
+from torch.nn import functional
 from triton_ptx.kernels.base import TritonPTXKernel
+from triton_ptx.kernels.vector_workload import BATCH_SIZE, VECTOR_SIZE
 
 
 class SwiGLUFloat16Kernel(TritonPTXKernel):
     def __init__(self, *, ptx=None):
-        self.size = 4096
-        self.constexpr_values = {"BLOCK_SIZE": self.size}
+        self.size = VECTOR_SIZE
+        self.batch_size = BATCH_SIZE
+        self.block_size = 4096
+        self.constexpr_values = {"BLOCK_SIZE": self.block_size}
         self.num_warps = 8
         self.init_compiled_kernels(ptx=ptx)
 
@@ -23,15 +26,19 @@ class SwiGLUFloat16Kernel(TritonPTXKernel):
 
     def get_random_input(self, fixed: bool = False):
         return (
-            torch.rand(self.size, device="cuda", dtype=torch.float16),
-            torch.rand(self.size, device="cuda", dtype=torch.float16),
+            torch.rand(
+                (self.batch_size, self.size), device="cuda", dtype=torch.float16
+            ),
+            torch.rand(
+                (self.batch_size, self.size), device="cuda", dtype=torch.float16
+            ),
         )
 
     def get_shape_information(self) -> str:
         return (
-            "- gate_ptr: float16 tensor with shape (4096,)\n"
-            "- value_ptr: float16 tensor with shape (4096,)\n"
-            "- output_ptr: float16 tensor with shape (4096,)"
+            f"- gate_ptr: float16 tensor with shape ({self.batch_size}, {self.size})\n"
+            f"- value_ptr: float16 tensor with shape ({self.batch_size}, {self.size})\n"
+            f"- output_ptr: float16 tensor with shape ({self.batch_size}, {self.size})"
         )
 
     def forward_triton(self, inputs, ptx=False):
@@ -41,8 +48,8 @@ class SwiGLUFloat16Kernel(TritonPTXKernel):
         launch_kwargs = (
             self.ptx_launch_kwargs() if ptx else {"num_warps": self.num_warps}
         )
-        kernel = launch_kernel[(1,)](
-            gate, value, output, BLOCK_SIZE=self.size, **launch_kwargs
+        kernel = launch_kernel[(triton.cdiv(gate.numel(), self.block_size),)](
+            gate, value, output, BLOCK_SIZE=self.block_size, **launch_kwargs
         )
         return output, kernel
 

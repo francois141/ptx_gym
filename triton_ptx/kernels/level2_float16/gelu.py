@@ -1,14 +1,15 @@
 import torch
 import triton
 import triton.language as tl
-
 from triton_ptx.kernels.base import TritonPTXKernel
+from triton_ptx.kernels.vector_workload import BATCH_SIZE, VECTOR_SIZE
 
 
 class GELUFloat16Kernel(TritonPTXKernel):
     def __init__(self, *, ptx=None):
         self.block_size = 1024
-        self.size = 4096
+        self.size = VECTOR_SIZE
+        self.batch_size = BATCH_SIZE
         self.constexpr_values = {
             "n_elements": self.size,
             "BLOCK_SIZE": self.block_size,
@@ -25,12 +26,14 @@ class GELUFloat16Kernel(TritonPTXKernel):
         tl.store(output_ptr + offsets, output.to(tl.float16))
 
     def get_random_input(self, fixed: bool = False):
-        return torch.rand(self.size, device="cuda", dtype=torch.float16)
+        return torch.rand(
+            (self.batch_size, self.size), device="cuda", dtype=torch.float16
+        )
 
     def get_shape_information(self) -> str:
         return (
-            "- x_ptr: float16 tensor with shape (4096,)\n"
-            "- output_ptr: float16 tensor with shape (4096,)"
+            f"- x_ptr: float16 tensor with shape ({self.batch_size}, {self.size})\n"
+            f"- output_ptr: float16 tensor with shape ({self.batch_size}, {self.size})"
         )
 
     def forward_triton(self, x, ptx=False):

@@ -1,14 +1,15 @@
 import torch
 import triton
 import triton.language as tl
-
 from triton_ptx.kernels.base import TritonPTXKernel
+from triton_ptx.kernels.vector_workload import BATCH_SIZE, VECTOR_SIZE
 
 
 class GELUKernel(TritonPTXKernel):
     def __init__(self, *, ptx=None):
         self.block_size = 1024
-        self.size = 4096
+        self.size = VECTOR_SIZE
+        self.batch_size = BATCH_SIZE
         self.constexpr_values = {
             "n_elements": self.size,
             "BLOCK_SIZE": self.block_size,
@@ -28,12 +29,14 @@ class GELUKernel(TritonPTXKernel):
         tl.store(output_ptr + offsets, output.to(output_ptr.dtype.element_ty))
 
     def get_random_input(self, fixed: bool = False):
-        return torch.rand(self.size, device="cuda", dtype=torch.float32)
+        return torch.rand(
+            (self.batch_size, self.size), device="cuda", dtype=torch.float32
+        )
 
     def get_shape_information(self) -> str:
         return (
-            f"- x_ptr: float32 tensor with shape ({self.size},)\n"
-            f"- output_ptr: float32 tensor with shape ({self.size},)"
+            f"- x_ptr: float32 tensor with shape ({self.batch_size}, {self.size})\n"
+            f"- output_ptr: float32 tensor with shape ({self.batch_size}, {self.size})"
         )
 
     def forward_triton(self, x, ptx=False):
@@ -43,7 +46,7 @@ class GELUKernel(TritonPTXKernel):
 
         if not ptx:
             launch_kernel = self.compiled_kernel
-            launch_kwargs = dict(num_warps=self.num_warps)
+            launch_kwargs = {"num_warps": self.num_warps}
         else:
             launch_kernel = self.compiled_kernel_ptx
             launch_kwargs = self.ptx_launch_kwargs()
