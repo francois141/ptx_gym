@@ -3,7 +3,6 @@ from __future__ import annotations
 import torch
 import triton
 import triton.language as tl
-
 from triton_ptx.kernels.base import TritonPTXKernel
 
 
@@ -99,6 +98,14 @@ class DotProductAttentionFloat16Kernel(TritonPTXKernel):
         return tuple(
             torch.randn(shape, device="cuda", dtype=torch.float16) for _ in range(3)
         )
+
+    def _default_tuning_options(self) -> dict[str, tuple[int, ...]]:
+        return {
+            "block_rows": (16, 32, 64, 128, 256),
+            "block_seq": (self.seq_len,),
+            "block_dim": (self.head_dim,),
+            "num_warps": (4, 8, 16),
+        }
 
     def get_shape_information(self) -> str:
         shape = (self.batch_size, self.num_heads, self.seq_len, self.head_dim)
