@@ -4,7 +4,7 @@ from triton_ptx.kernels.base import TritonPTXKernel
 from triton_ptx.kernels.vector_workload import (
     BATCH_SIZE,
     VECTOR_SIZE,
-    VECTOR_SIZE_CONSTEXPR,
+    random_softmax_input,
 )
 
 
@@ -12,41 +12,37 @@ class SoftmaxKernel(TritonPTXKernel):
     def __init__(self, *, ptx=None):
         self.size = VECTOR_SIZE
         self.batch_size = BATCH_SIZE
-        self.block_size = 4096
+        self.block_size = VECTOR_SIZE
         self.constexpr_values = {"BLOCK_SIZE": self.block_size}
         self.num_warps = 8
+        self.num_stages = 4
         self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
-    def kernel(x_ptr, output_ptr, BLOCK_SIZE: tl.constexpr):
-        batch_index = tl.program_id(axis=0)
-        vector_offset = batch_index * VECTOR_SIZE_CONSTEXPR
-        offsets = tl.arange(0, BLOCK_SIZE)
-        maximum = -float("inf")
-        for block_offset in tl.range(0, VECTOR_SIZE_CONSTEXPR, BLOCK_SIZE):
-            values = tl.load(x_ptr + vector_offset + block_offset + offsets).to(
-                tl.float32
-            )
-            maximum = tl.maximum(maximum, tl.max(values, axis=0))
-        denominator = 0.0
-        for block_offset in tl.range(0, VECTOR_SIZE_CONSTEXPR, BLOCK_SIZE):
-            values = tl.load(x_ptr + vector_offset + block_offset + offsets).to(
-                tl.float32
-            )
-            denominator += tl.sum(tl.exp(values - maximum), axis=0)
-        for block_offset in tl.range(0, VECTOR_SIZE_CONSTEXPR, BLOCK_SIZE):
-            values = tl.load(x_ptr + vector_offset + block_offset + offsets).to(
-                tl.float32
-            )
-            tl.store(
-                output_ptr + vector_offset + block_offset + offsets,
-                tl.exp(values - maximum) / denominator,
-            )
+    def kernel(
+        output_ptr,
+        input_ptr,
+        input_row_stride,
+        output_row_stride,
+        n_rows,
+        BLOCK_SIZE: tl.constexpr,
+        num_stages: tl.constexpr,
+    ):
+        row_start = tl.program_id(axis=0)
+        row_step = tl.num_programs(axis=0)
+        col_offsets = tl.arange(0, BLOCK_SIZE)
+
+        for row_idx in tl.range(row_start, n_rows, row_step, num_stages=num_stages):
+            input_row_ptr = input_ptr + row_idx * input_row_stride
+            values = tl.load(input_row_ptr + col_offsets).to(tl.float32)
+            values -= tl.max(values, axis=0)
+            numerator = tl.exp(values)
+            denominator = tl.sum(numerator, axis=0)
+            output_row_ptr = output_ptr + row_idx * output_row_stride
+            tl.store(output_row_ptr + col_offsets, numerator / denominator)
 
     def get_random_input(self, fixed: bool = False):
-        return torch.randn(
-            (self.batch_size, self.size), device="cuda", dtype=torch.float32
-        )
+        return random_softmax_input(self.batch_size, self.size, torch.float32)
 
     def get_shape_information(self) -> str:
         return (
@@ -62,9 +58,13 @@ class SoftmaxKernel(TritonPTXKernel):
         )
         grid = lambda meta: (self.batch_size,)
         launched_kernel = launch_kernel[grid](
-            x,
             output,
+            x,
+            x.stride(0),
+            output.stride(0),
+            self.batch_size,
             BLOCK_SIZE=self.block_size,
+            num_stages=self.num_stages,
             **launch_kwargs,
         )
         return output, launched_kernel

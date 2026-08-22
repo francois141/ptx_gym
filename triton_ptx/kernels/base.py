@@ -9,7 +9,6 @@ from typing import Any
 
 import torch
 from tqdm.auto import tqdm
-
 from triton.runtime.errors import OutOfResources
 from triton_ptx.helpers.kernels import get_ptx_code, has_ptx_code
 from triton_ptx.helpers.triton import jit_fixed_parameters
@@ -109,7 +108,13 @@ class TritonPTXKernel(ABC):
                 self._apply_tuning_config(config)
                 try:
                     output, _ = self.forward_triton(inputs)
-                    torch.testing.assert_close(output, reference, rtol=1e-3, atol=1e-3)
+                    tolerance = getattr(self, "autotune_tolerance", 1e-3)
+                    torch.testing.assert_close(
+                        output,
+                        reference,
+                        rtol=tolerance,
+                        atol=tolerance,
+                    )
                     latency_ms = self._benchmark_current_configuration(inputs)
                 except (AssertionError, OutOfResources, RuntimeError):
                     rejected_configurations += 1

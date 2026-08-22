@@ -17,7 +17,7 @@ class SwiGLUFloat16Kernel(TritonPTXKernel):
 
     @staticmethod
     def kernel(gate_ptr, value_ptr, output_ptr, BLOCK_SIZE: tl.constexpr):
-        offsets = tl.arange(0, BLOCK_SIZE)
+        offsets = tl.program_id(axis=0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
         gate = tl.load(gate_ptr + offsets)
         value = tl.load(value_ptr + offsets)
         gate = gate.to(tl.float32)

@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import torch
-import triton.language as tl
-
 import triton
+import triton.language as tl
 from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class FusedGEMMAddGELUFloat16Kernel(TritonPTXKernel):
     def __init__(self, *, ptx=None):
         self.size = 4096
+        self.autotune_tolerance = 1e-2
         self.block_m = 128
         self.block_n = 128
         self.block_k = 32
