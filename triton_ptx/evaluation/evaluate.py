@@ -26,6 +26,18 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
     Evaluates PTX candidates by compiling, checking correctness, and benchmarking.
     """
 
+    def __init__(
+        self,
+        operator_cls,
+        *,
+        operator=None,
+        enable_ncu_report=True,
+        enable_sanitizer=True,
+    ):
+        super().__init__(operator_cls, operator=operator)
+        self.enable_ncu_report = enable_ncu_report
+        self.enable_sanitizer = enable_sanitizer
+
     def evaluate(
         self,
         payload: Payload,
@@ -52,24 +64,29 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
                 compile_output=compile_output,
                 compile_error=compile_error,
             )
-        try:
-            sanitizer_report = diagnose_ptx(
-                self.kernel_name,
-                launch_payload,
-                sanitizer_tool="memcheck",
-            )
-        except (OSError, RuntimeError, TypeError, ValueError) as exc:
-            return EvaluatedCandidate.failed(
-                kernel_name=self.kernel_name,
-                git_commit_hash=self.git_commit_hash,
-                compiles=True,
-                correct=False,
-                message=f"Sanitizer check crashed: {type(exc).__name__}: {exc}",
-                compile_output=compile_output,
-                compile_error=compile_error,
-            )
+        sanitizer_report = {}
+        if self.enable_sanitizer:
+            try:
+                sanitizer_report = diagnose_ptx(
+                    self.kernel_name,
+                    launch_payload,
+                    sanitizer_tool="memcheck",
+                )
+            except (OSError, RuntimeError, TypeError, ValueError) as exc:
+                return EvaluatedCandidate.failed(
+                    kernel_name=self.kernel_name,
+                    git_commit_hash=self.git_commit_hash,
+                    compiles=True,
+                    correct=False,
+                    message=(
+                        "Sanitizer check crashed: "
+                        f"{type(exc).__name__}: {exc}"
+                    ),
+                    compile_output=compile_output,
+                    compile_error=compile_error,
+                )
 
-        if sanitizer_report.get("clean") is not True:
+        if self.enable_sanitizer and sanitizer_report.get("clean") is not True:
             sanitizer_error = sanitizer_report.get("error")
             input_kwargs = sanitizer_report.get("input_kwargs")
             message = "Sanitizer check failed"
@@ -132,10 +149,12 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
             if ptx_timing is None:
                 raise RuntimeError("PTX timing metrics were not produced.")
 
-            ncu_report = profile_ptx_with_ncu(
-                self.kernel_name,
-                payload,
-            ).to_dict()
+            ncu_report = {}
+            if self.enable_ncu_report:
+                ncu_report = profile_ptx_with_ncu(
+                    self.kernel_name,
+                    payload,
+                ).to_dict()
 
             return EvaluatedCandidate(
                 kernel_name=self.kernel_name,

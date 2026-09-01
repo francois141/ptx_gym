@@ -259,7 +259,7 @@ class EvaluatedCandidate:
             ensure_ascii=False,
         )
 
-    def to_llm(self) -> str:
+    def to_llm(self, *, ncu_line_by_line: list[dict[str, Any]] | None = None) -> str:
         """Return evaluation feedback relevant to improving a candidate."""
         data = self.to_dict()
         for field_name in ("kernel_name", "git_commit_hash", "payload"):
@@ -286,6 +286,9 @@ class EvaluatedCandidate:
             }
             if ncu_status:
                 data["ncu_report"] = ncu_status
+
+        if ncu_line_by_line:
+            data["ncu_line_by_line"] = ncu_line_by_line
 
         data = {
             key: value for key, value in data.items() if value not in (None, "", {}, [])

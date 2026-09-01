@@ -3,8 +3,9 @@ from __future__ import annotations
 import ast
 import inspect
 import textwrap
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, cast
+from typing import cast
 
 EMPTY = inspect.Parameter.empty
 
@@ -16,6 +17,7 @@ PTX_LAUNCH_KEYS: frozenset[str] = frozenset(
     }
 )
 
+
 def get_ptx_code(ptx: object) -> object | None:
     """Return PTX source from a payload mapping or a raw PTX value."""
     if isinstance(ptx, dict):
@@ -26,7 +28,6 @@ def get_ptx_code(ptx: object) -> object | None:
 def has_ptx_code(ptx: object) -> bool:
     """Return whether a PTX value or payload contains PTX source."""
     return get_ptx_code(ptx) is not None
-
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,7 @@ class KernelSpec:
     operator_name: str
     kernel_name: str
     source: str
+    supporting_source: str
     parameters: tuple[KernelParameter, ...]
     shape_information: str
     constexpr_values: dict[str, object] = field(default_factory=dict)
@@ -107,8 +109,7 @@ def _extract_kernel_function(
     kernel_node = function_nodes[0]
     if kernel_node.name != kernel.__name__:
         raise ValueError(
-            f"Expected kernel function {kernel.__name__!r}, "
-            f"found {kernel_node.name!r}"
+            f"Expected kernel function {kernel.__name__!r}, found {kernel_node.name!r}"
         )
 
     kernel_source = ast.get_source_segment(source, kernel_node)
@@ -116,6 +117,39 @@ def _extract_kernel_function(
         raise ValueError(f"Unable to read kernel function source from {filename}")
 
     return kernel_node.name, kernel_source.strip(), parse_parameters(kernel)
+
+
+def _extract_supporting_source(kernel: Callable[..., object], source: str) -> str:
+    """Return module-level helper functions directly called by a kernel."""
+    module = inspect.getmodule(kernel)
+    if module is None:
+        return ""
+
+    source_tree = ast.parse(source)
+    helper_names = {
+        node.func.id
+        for node in ast.walk(source_tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    helper_sources = []
+    for helper_name in sorted(helper_names):
+        helper = getattr(module, helper_name, None)
+        if helper is None or inspect.getmodule(helper) is not module:
+            continue
+        source_helper = getattr(helper, "fn", helper)
+        try:
+            helper_source = textwrap.dedent(inspect.getsource(source_helper)).strip()
+        except (OSError, TypeError):
+            continue
+        helper_tree = ast.parse(helper_source)
+        if any(
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == helper_name
+            for node in helper_tree.body
+        ):
+            helper_sources.append(helper_source)
+
+    return "\n\n".join(helper_sources)
 
 
 def extract_specification_from_operator(operator: object) -> KernelSpec:
@@ -147,6 +181,7 @@ def extract_specification_from_operator(operator: object) -> KernelSpec:
         operator_name=operator_cls.__name__,
         kernel_name=kernel_name,
         source=kernel_source,
+        supporting_source=_extract_supporting_source(kernel, kernel_source),
         parameters=parameters,
         shape_information=shape_information.strip(),
         constexpr_values=(
