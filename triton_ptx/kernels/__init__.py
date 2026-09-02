@@ -1,3 +1,8 @@
+from .adversial import (
+    AdversialFlashAttentionKernel,
+    AdversialMatrixMultiplicationKernel,
+    AdversialReLUKernel,
+)
 from .level1_float32 import (
     Convolution2DKernel,
     DotProductAttentionKernel,
@@ -26,6 +31,13 @@ from .level2_float16 import (
     SiLUFloat16Kernel,
     SoftmaxFloat16Kernel,
     SwiGLUFloat16Kernel,
+)
+from .random import (
+    RandomKernel1,
+    RandomKernel2,
+    RandomKernel3,
+    RandomKernel4,
+    RandomKernel5,
 )
 
 MatrixMultiplicationFloat16 = MatrixMultiplicationFloat16Kernel
@@ -76,6 +88,7 @@ level1_float32_kernel_list = [
     SiLUKernel,
     SoftmaxKernel,
     SwiGLUKernel,
+    RandomKernel1,
 ]
 
 level2_float16_kernel_list = [
@@ -94,4 +107,23 @@ level2_float16_kernel_list = [
     SwiGLUFloat16Kernel,
 ]
 
-kernel_list = level1_float32_kernel_list + level2_float16_kernel_list
+random_kernel_list = [
+    RandomKernel1,
+    RandomKernel2,
+    RandomKernel3,
+    RandomKernel4,
+    RandomKernel5,
+]
+
+adversial_kernel_list = [
+    AdversialFlashAttentionKernel,
+    AdversialMatrixMultiplicationKernel,
+    AdversialReLUKernel,
+]
+
+kernel_list = (
+    level1_float32_kernel_list
+    + level2_float16_kernel_list
+    + random_kernel_list
+    + adversial_kernel_list
+)
