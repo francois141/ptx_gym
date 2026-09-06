@@ -158,6 +158,9 @@ def get_ptx_system_config() -> tuple[str, str, int]:
 
     major, minor = torch.cuda.get_device_capability()
     target = f"sm_{major}{minor}"
+    if target == "sm_90":
+        # Temporary hack until a better target-version mapping is available.
+        target = "sm_90a"
 
     address_size = ctypes.sizeof(ctypes.c_void_p) * 8
 
