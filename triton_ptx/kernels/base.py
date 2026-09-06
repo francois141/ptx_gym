@@ -9,7 +9,7 @@ from typing import Any
 
 import torch
 from tqdm.auto import tqdm
-from triton.runtime.errors import OutOfResources
+from triton.runtime.errors import OutOfResources, PTXASError
 from triton_ptx.helpers.kernels import get_ptx_code, has_ptx_code
 from triton_ptx.helpers.triton import jit_fixed_parameters
 
@@ -116,7 +116,12 @@ class TritonPTXKernel(ABC):
                         atol=tolerance,
                     )
                     latency_ms = self._benchmark_current_configuration(inputs)
-                except (AssertionError, OutOfResources, RuntimeError):
+                except (
+                    AssertionError,
+                    OutOfResources,
+                    PTXASError,
+                    RuntimeError,
+                ) as exc:
                     rejected_configurations += 1
                     continue
 
@@ -183,7 +188,7 @@ class TritonPTXKernel(ABC):
             attribute = constexpr_name.lower()
             value = getattr(self, attribute, None)
             if constexpr_name.startswith("BLOCK_") and isinstance(value, int):
-                options[attribute] = (16,32,64,128,256)
+                options[attribute] = (16, 32, 64, 128, 256)
         if isinstance(getattr(self, "num_warps", None), int):
             options["num_warps"] = (4, 8, 16)
         if isinstance(getattr(self, "num_stages", None), int):

@@ -1,20 +1,16 @@
 from __future__ import annotations
 
 import torch
-import torch.nn.functional as F
 import triton
 import triton.language as tl
+
 from triton_ptx.kernels.base import TritonPTXKernel
 
 
-class DotProductAttentionKernel(TritonPTXKernel):
-    """Scaled dot-product attention without masking or dropout."""
+class DotProductAttentionFloat16Kernel(TritonPTXKernel):
+    """Float16 attention whose two matrix products lower through tensor cores."""
 
-    def __init__(
-        self,
-        *,
-        ptx: object | None = None,
-    ) -> None:
+    def __init__(self, *, ptx: object | None = None) -> None:
         self.batch_size = 8
         self.num_heads = 16
         self.seq_len = 256
@@ -70,7 +66,6 @@ class DotProductAttentionKernel(TritonPTXKernel):
         BLOCK_SEQ: tl.constexpr,
         BLOCK_DIM: tl.constexpr,
     ):
-        """Compute a tile of attention output rows per Triton program."""
         row = tl.program_id(axis=0) * BLOCK_ROWS + tl.arange(0, BLOCK_ROWS)
         head = tl.program_id(axis=1)
         batch = tl.program_id(axis=2)
@@ -80,31 +75,18 @@ class DotProductAttentionKernel(TritonPTXKernel):
         q_base = q_ptr + batch * stride_qb + head * stride_qh + row[:, None] * stride_qs
         k_base = k_ptr + batch * stride_kb + head * stride_kh
         v_base = v_ptr + batch * stride_vb + head * stride_vh
-
         q = tl.load(q_base + dim_offsets[None, :])
-        k = tl.load(
-            k_base + seq_offsets[:, None] * stride_ks + dim_offsets[None, :],
-        )
-        scores = tl.dot(
-            q,
-            tl.trans(k),
-            out_dtype=tl.float32,
-            input_precision="ieee",
-        )
+        k = tl.load(k_base + seq_offsets[:, None] * stride_ks + dim_offsets[None, :])
+        scores = tl.dot(q, tl.trans(k), out_dtype=tl.float32)
         scores *= HEAD_DIM**-0.5
         scores -= tl.max(scores, axis=1)[:, None]
         weights = tl.exp(scores)
         weights /= tl.sum(weights, axis=1)[:, None]
 
         values = tl.load(
-            v_base + seq_offsets[:, None] * stride_vs + dim_offsets[None, :],
+            v_base + seq_offsets[:, None] * stride_vs + dim_offsets[None, :]
         )
-        output = tl.dot(
-            weights,
-            values,
-            out_dtype=tl.float32,
-            input_precision="ieee",
-        )
+        output = tl.dot(weights.to(tl.float16), values, out_dtype=tl.float32)
         output_base = (
             output_ptr + batch * stride_ob + head * stride_oh + row[:, None] * stride_os
         )
@@ -113,31 +95,15 @@ class DotProductAttentionKernel(TritonPTXKernel):
     def get_random_input(
         self, fixed: bool = False
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Create random query, key, and value tensors."""
         shape = (self.batch_size, self.num_heads, self.seq_len, self.head_dim)
-        return (
-            torch.randn(shape, device="cuda", dtype=torch.float32),
-            torch.randn(shape, device="cuda", dtype=torch.float32),
-            torch.randn(shape, device="cuda", dtype=torch.float32),
+        return tuple(
+            torch.randn(shape, device="cuda", dtype=torch.float16) for _ in range(3)
         )
-
-    def _default_tuning_options(self) -> dict[str, tuple[int, ...]]:
-        return {
-            "block_rows": (16, 32, 64, 128, 256),
-            "block_seq": (self.seq_len,),
-            "block_dim": (self.head_dim,),
-            "num_warps": (4, 8, 16),
-        }
 
     def get_shape_information(self) -> str:
-        shape = (
-            self.batch_size,
-            self.num_heads,
-            self.seq_len,
-            self.head_dim,
-        )
+        shape = (self.batch_size, self.num_heads, self.seq_len, self.head_dim)
         return "\n".join(
-            f"- {name}_ptr: float32 tensor with shape {shape}"
+            f"- {name}_ptr: float16 tensor with shape {shape}"
             for name in ("q", "k", "v", "output")
         )
 
@@ -146,20 +112,7 @@ class DotProductAttentionKernel(TritonPTXKernel):
         inputs: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
         ptx: bool = False,
     ) -> tuple[torch.Tensor, object]:
-        """Run the Triton attention kernel."""
         q, k, v = inputs
-        expected_shape = (
-            self.batch_size,
-            self.num_heads,
-            self.seq_len,
-            self.head_dim,
-        )
-        if (
-            q.shape != expected_shape
-            or k.shape != expected_shape
-            or v.shape != expected_shape
-        ):
-            raise ValueError(f"q, k, and v must each have shape {expected_shape}")
         output = torch.empty_like(q)
         launch_kernel = self.compiled_kernel_ptx if ptx else self.compiled_kernel
         launch_kwargs = (
@@ -200,9 +153,8 @@ class DotProductAttentionKernel(TritonPTXKernel):
         self,
         inputs: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
     ) -> torch.Tensor:
-        """Evaluate attention with PyTorch's fused reference implementation."""
         q, k, v = inputs
-        return F.scaled_dot_product_attention(
+        return torch.nn.functional.scaled_dot_product_attention(
             q,
             k,
             v,

@@ -1,10 +1,10 @@
 import triton.language as tl
-from triton_ptx.kernels.level1_float32.matrix_multiplication import (
-    MatrixMultiplicationKernel,
+from triton_ptx.kernels.common.matrix_multiplication import (
+    MatrixMultiplicationFloat16,
 )
 
 
-class AdversialMatrixMultiplicationKernel(MatrixMultiplicationKernel):
+class AdversialMatrixMultiplicationKernel(MatrixMultiplicationFloat16):
     def __init__(self, *, ptx=None):
         self.block_m = 128
         self.block_n = 128

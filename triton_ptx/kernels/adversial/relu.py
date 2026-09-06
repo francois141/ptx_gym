@@ -1,8 +1,8 @@
 import triton.language as tl
-from triton_ptx.kernels.level1_float32.relu import ReLUKernel
+from triton_ptx.kernels.common.relu import ReLUFloat16Kernel
 
 
-class AdversialReLUKernel(ReLUKernel):
+class AdversialReLUKernel(ReLUFloat16Kernel):
     @staticmethod
     def kernel(
         x_ptr,
@@ -33,5 +33,3 @@ class AdversialReLUKernel(ReLUKernel):
         offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
         x = tl.load(x_ptr + offsets)
         tl.store(output_ptr + offsets, tl.maximum(x, 0.0))
-
-

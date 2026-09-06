@@ -7,7 +7,7 @@ import triton
 from triton_ptx.kernels.base import TritonPTXKernel
 
 
-class FusedGEMMAddGELUKernel(TritonPTXKernel):
+class FusedGEMMAddGELUFloat16Kernel(TritonPTXKernel):
     def __init__(self, *, ptx=None):
         self.size = 4096
         self.block_m = 128
@@ -56,27 +56,26 @@ class FusedGEMMAddGELUKernel(TritonPTXKernel):
                 tl.load(b_ptrs),
                 acc=accumulator,
                 out_dtype=tl.float32,
-                input_precision="ieee",
             )
             a_ptrs += BLOCK_K
             b_ptrs += BLOCK_K * stride_bk
 
         add_ptrs = d_ptr + offsets_m[:, None] * stride_dm + offsets_n[None, :]
-        values = accumulator + tl.load(add_ptrs)
+        values = accumulator + tl.load(add_ptrs).to(tl.float32)
         output = 0.5 * values * (1.0 + tl.math.erf(values * 0.7071067811865476))
         c_ptrs = c_ptr + offsets_m[:, None] * stride_cm + offsets_n[None, :]
-        tl.store(c_ptrs, output)
+        tl.store(c_ptrs, output.to(tl.float16))
 
     def get_random_input(self, fixed: bool = False):
-        a = torch.randn((self.size, self.size), device="cuda", dtype=torch.float32)
-        b = torch.randn((self.size, self.size), device="cuda", dtype=torch.float32)
-        d = torch.randn((self.size, self.size), device="cuda", dtype=torch.float32)
-        c = torch.empty((self.size, self.size), device="cuda", dtype=torch.float32)
+        a = torch.randn((self.size, self.size), device="cuda", dtype=torch.float16)
+        b = torch.randn((self.size, self.size), device="cuda", dtype=torch.float16)
+        d = torch.randn((self.size, self.size), device="cuda", dtype=torch.float16)
+        c = torch.empty((self.size, self.size), device="cuda", dtype=torch.float16)
         return a, b, d, c
 
     def get_shape_information(self) -> str:
         return "\n".join(
-            f"- {name}_ptr: float32 tensor with shape ({self.size}, {self.size})"
+            f"- {name}_ptr: float16 tensor with shape ({self.size}, {self.size})"
             for name in ("a", "b", "d", "c")
         )
 

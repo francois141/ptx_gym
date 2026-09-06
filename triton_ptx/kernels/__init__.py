@@ -3,21 +3,7 @@ from .adversial import (
     AdversialMatrixMultiplicationKernel,
     AdversialReLUKernel,
 )
-from .level1_float32 import (
-    Convolution2DKernel,
-    DotProductAttentionKernel,
-    FusedGEMMAddGELUKernel,
-    GELUKernel,
-    MatrixMultiplicationKernel,
-    MatrixVectorMultiplicationKernel,
-    ReductionSumKernel,
-    ReLUKernel,
-    RMSNormKernel,
-    SiLUKernel,
-    SoftmaxKernel,
-    SwiGLUKernel,
-)
-from .level2_float16 import (
+from .common import (
     Convolution2DFloat16Kernel,
     DotProductAttentionFloat16Kernel,
     FlashAttentionFloat16Kernel,
@@ -75,23 +61,8 @@ def resolve_kernel(name: str) -> type:
     return kernels[name]
 
 
-level1_float32_kernel_list = [
-    Convolution2DKernel,
-    DotProductAttentionKernel,
-    FusedGEMMAddGELUKernel,
-    GELUKernel,
-    MatrixMultiplicationKernel,
-    MatrixVectorMultiplicationKernel,
-    ReLUKernel,
-    ReductionSumKernel,
-    RMSNormKernel,
-    SiLUKernel,
-    SoftmaxKernel,
-    SwiGLUKernel,
-    RandomKernel1,
-]
 
-level2_float16_kernel_list = [
+common_list = [
     Convolution2DFloat16Kernel,
     DotProductAttentionFloat16Kernel,
     FlashAttentionFloat16Kernel,
@@ -122,8 +93,7 @@ adversial_kernel_list = [
 ]
 
 kernel_list = (
-    level1_float32_kernel_list
-    + level2_float16_kernel_list
+    common_list
     + random_kernel_list
     + adversial_kernel_list
 )

@@ -1,12 +1,11 @@
 import triton.language as tl
-from triton_ptx.kernels.level2_float16.flash_attention import (
+from triton_ptx.kernels.common.flash_attention import (
     FlashAttentionFloat16Kernel,
     _flash_attention_fwd_inner,
 )
 
 
 class AdversialFlashAttentionKernel(FlashAttentionFloat16Kernel):
-
     # There is a mistake in qk.scale on purpose instead of a * et have a +  for 1.44.....
     @staticmethod
     def kernel(
