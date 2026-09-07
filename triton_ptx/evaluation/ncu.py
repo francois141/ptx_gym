@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, replace
 from io import StringIO
 from pathlib import Path
@@ -649,12 +650,14 @@ def profile_ptx_with_ncu(
     kernel_name: str,
     payload: Payload,
     *,
+    tuning_config: Mapping[str, int] | None = None,
     timeout_seconds: int = 300,
 ) -> NCUResult:
     """Collect detailed hardware metrics for one PTX kernel launch.
 
     Args:
         kernel_name: Registered kernel class used to launch the candidate.
+        tuning_config: Active operator tuning values used to derive the launch grid.
         payload: Compiled PTX and launch dimensions.
         timeout_seconds: Maximum Nsight Compute runtime in seconds.
 
@@ -668,6 +671,14 @@ def profile_ptx_with_ncu(
     """
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be positive.")
+    if tuning_config is not None and not all(
+        isinstance(name, str)
+        and isinstance(value, int)
+        and not isinstance(value, bool)
+        and value > 0
+        for name, value in tuning_config.items()
+    ):
+        raise ValueError("tuning_config must map parameter names to positive integers.")
 
     ncu_path = os.environ.get(NCU_ENV_VAR)
     if ncu_path is None:
@@ -693,7 +704,14 @@ def profile_ptx_with_ncu(
             orjson.dumps(
                 {
                     "kernel_name": kernel_name,
-                    "candidate": profiled_payload.to_launch_dict(),
+                    "candidate": {
+                        **profiled_payload.to_launch_dict(),
+                        **(
+                            {"tuning_config": dict(tuning_config)}
+                            if tuning_config
+                            else {}
+                        ),
+                    },
                 }
             )
         )

@@ -152,6 +152,7 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
                 ncu_report = profile_ptx_with_ncu(
                     self.kernel_name,
                     payload,
+                    tuning_config=self.operator.best_config,
                 ).to_dict()
 
             return EvaluatedCandidate(
