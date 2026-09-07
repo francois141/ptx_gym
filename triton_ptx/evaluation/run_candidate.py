@@ -43,7 +43,22 @@ def run_candidate(
         raise RuntimeError("CUDA is required to run a PTX candidate.")
 
     payload = Payload.from_input(candidate)
-    operator = resolve_kernel(kernel_name)(ptx=payload.to_launch_dict())
+    launch_payload = payload.to_launch_dict()
+    tuning_config = candidate.get("tuning_config")
+    if tuning_config is not None:
+        if not isinstance(tuning_config, Mapping) or not all(
+            isinstance(name, str)
+            and isinstance(value, int)
+            and not isinstance(value, bool)
+            and value > 0
+            for name, value in tuning_config.items()
+        ):
+            raise ValueError(
+                "Candidate tuning_config must map parameter names to positive integers."
+            )
+        launch_payload["tuning_config"] = dict(tuning_config)
+
+    operator = resolve_kernel(kernel_name)(ptx=launch_payload)
     inputs = operator.get_random_input(**(dict(input_kwargs) if input_kwargs else {}))
     operator.forward_triton(inputs, ptx=True)
     torch.cuda.synchronize()

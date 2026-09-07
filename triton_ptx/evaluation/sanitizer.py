@@ -213,6 +213,7 @@ def diagnose_ptx(
     candidate: dict[str, object],
     sanitizer_tool: str = "all",
     timeout_seconds: int = 120,
+    tuning_config: Mapping[str, int] | None = None,
 ) -> dict[str, object]:
     """Run a PTX candidate under NVIDIA Compute Sanitizer.
 
@@ -221,6 +222,7 @@ def diagnose_ptx(
         candidate: PTX text and launch dimensions accepted by ``Payload``.
         sanitizer_tool: Analysis to perform, or ``all`` to run every analysis.
         timeout_seconds: Maximum runtime in seconds for each analysis.
+        tuning_config: Active operator tuning values used to derive the launch grid.
 
     Returns:
         Structured availability, execution, and diagnostic results.
@@ -237,6 +239,14 @@ def diagnose_ptx(
     )
     if message := next((message for failed, message in invalid if failed), None):
         raise ValueError(message)
+    if tuning_config is not None and not all(
+        isinstance(name, str)
+        and isinstance(value, int)
+        and not isinstance(value, bool)
+        and value > 0
+        for name, value in tuning_config.items()
+    ):
+        raise ValueError("tuning_config must map parameter names to positive integers.")
 
     normalized_candidate = Payload.from_input(candidate).to_launch_dict()
     sanitizer_path = os.environ.get(SANITIZER_ENV_VAR)
@@ -254,6 +264,7 @@ def diagnose_ptx(
     request = {
         "kernel_name": kernel_name,
         "candidate": {
+            **({"tuning_config": dict(tuning_config)} if tuning_config else {}),
             **normalized_candidate,
             "ptx": _add_ptx_line_information(cast(str, normalized_candidate["ptx"])),
         },

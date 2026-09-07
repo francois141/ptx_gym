@@ -71,6 +71,7 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
                     self.kernel_name,
                     launch_payload,
                     sanitizer_tool="memcheck",
+                    tuning_config=self.operator.best_config,
                 )
             except (OSError, RuntimeError, TypeError, ValueError) as exc:
                 return EvaluatedCandidate.failed(
@@ -78,10 +79,7 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
                     git_commit_hash=self.git_commit_hash,
                     compiles=True,
                     correct=False,
-                    message=(
-                        "Sanitizer check crashed: "
-                        f"{type(exc).__name__}: {exc}"
-                    ),
+                    message=(f"Sanitizer check crashed: {type(exc).__name__}: {exc}"),
                     compile_output=compile_output,
                     compile_error=compile_error,
                 )
