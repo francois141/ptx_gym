@@ -323,8 +323,6 @@ def compile(src, target=None, options=None, _env_vars=None, ptx=None):
     for ext, compile_ir in list(stages.items())[first_stage:]:
         if ext == "cubin" and ptx is not None:
             module = ptx
-            if re.search(r"^\s*\.shared\b", ptx, re.MULTILINE):
-                metadata["shared"] = 0
         next_module = compile_ir(module, metadata)
         ir_filename = f"{file_name}.{ext}"
         if fn_override_manager is None:
