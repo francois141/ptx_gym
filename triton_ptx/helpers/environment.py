@@ -162,6 +162,10 @@ def get_ptx_system_config() -> tuple[str, str, int]:
         # Temporary hack until a better target-version mapping is available.
         target = "sm_90a"
 
+    if target == "sm_100":
+        # Temporary hack until a better target-version mapping is available.
+        target = "sm_100a"
+
     address_size = ctypes.sizeof(ctypes.c_void_p) * 8
 
     try:
