@@ -72,6 +72,8 @@ def _flash_attention_fwd_inner(
 
 
 class FlashAttentionFloat16Kernel(TritonPTXKernel):
+    autotune_tolerance = 1e-2
+
     def __init__(self, *, ptx=None):
         self.batch_size = 8
         self.num_heads = 16
@@ -89,7 +91,7 @@ class FlashAttentionFloat16Kernel(TritonPTXKernel):
             "BLOCK_N": self.block_n,
             "STAGE": self.stage,
         }
-        self.init_compiled_kernels(ptx=ptx, autotune=False)
+        self.init_compiled_kernels(ptx=ptx)
 
     @staticmethod
     def kernel(

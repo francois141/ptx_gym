@@ -8,6 +8,8 @@ from triton_ptx.kernels.base import TritonPTXKernel
 
 
 class FusedGEMMAddGELUFloat16Kernel(TritonPTXKernel):
+    autotune_tolerance = 1e-2
+
     def __init__(self, *, ptx=None):
         self.size = 4096
         self.block_m = 128
