@@ -1,17 +1,12 @@
 import torch
 import triton.language as tl
 from triton_ptx.kernels.base import TritonPTXKernel
-from triton_ptx.kernels.vector_workload import (
-    BATCH_SIZE,
-    VECTOR_SIZE,
-    VECTOR_SIZE_CONSTEXPR,
-)
 
 
 class SoftmaxFloat16Kernel(TritonPTXKernel):
     def __init__(self, *, ptx=None):
-        self.size = VECTOR_SIZE
-        self.batch_size = BATCH_SIZE
+        self.size = 4096
+        self.batch_size = 256
         self.block_size = 4096
         self.constexpr_values = {"BLOCK_SIZE": self.block_size}
         self.num_warps = 8
@@ -20,21 +15,21 @@ class SoftmaxFloat16Kernel(TritonPTXKernel):
     @staticmethod
     def kernel(x_ptr, output_ptr, BLOCK_SIZE: tl.constexpr):
         batch_index = tl.program_id(axis=0)
-        vector_offset = batch_index * VECTOR_SIZE_CONSTEXPR
+        vector_offset = batch_index * 4096
         offsets = tl.arange(0, BLOCK_SIZE)
         maximum = -float("inf")
-        for block_offset in tl.range(0, VECTOR_SIZE_CONSTEXPR, BLOCK_SIZE):
+        for block_offset in tl.range(0, 4096, BLOCK_SIZE):
             values = tl.load(x_ptr + vector_offset + block_offset + offsets).to(
                 tl.float32
             )
             maximum = tl.maximum(maximum, tl.max(values, axis=0))
         denominator = 0.0
-        for block_offset in tl.range(0, VECTOR_SIZE_CONSTEXPR, BLOCK_SIZE):
+        for block_offset in tl.range(0, 4096, BLOCK_SIZE):
             values = tl.load(x_ptr + vector_offset + block_offset + offsets).to(
                 tl.float32
             )
             denominator += tl.sum(tl.exp(values - maximum), axis=0)
-        for block_offset in tl.range(0, VECTOR_SIZE_CONSTEXPR, BLOCK_SIZE):
+        for block_offset in tl.range(0, 4096, BLOCK_SIZE):
             values = tl.load(x_ptr + vector_offset + block_offset + offsets).to(
                 tl.float32
             )

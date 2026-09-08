@@ -3,13 +3,12 @@ import triton
 import triton.language as tl
 from torch.nn import functional
 from triton_ptx.kernels.base import TritonPTXKernel
-from triton_ptx.kernels.vector_workload import BATCH_SIZE, VECTOR_SIZE
 
 
 class SiLUFloat16Kernel(TritonPTXKernel):
     def __init__(self, *, ptx=None):
-        self.size = VECTOR_SIZE
-        self.batch_size = BATCH_SIZE
+        self.size = 4096
+        self.batch_size = 256
         self.block_size = 4096
         self.constexpr_values = {"BLOCK_SIZE": self.block_size}
         self.num_warps = 8

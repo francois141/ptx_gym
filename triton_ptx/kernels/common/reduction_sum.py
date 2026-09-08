@@ -2,17 +2,12 @@ import torch
 import triton
 import triton.language as tl
 from triton_ptx.kernels.base import TritonPTXKernel
-from triton_ptx.kernels.vector_workload import (
-    BATCH_SIZE,
-    VECTOR_SIZE,
-    VECTOR_SIZE_CONSTEXPR,
-)
 
 
 class ReductionSumFloat16Kernel(TritonPTXKernel):
     def __init__(self, *, ptx=None):
-        self.size = VECTOR_SIZE
-        self.batch_size = BATCH_SIZE
+        self.size = 4096
+        self.batch_size = 256
         self.block_size = 1024
         self.constexpr_values = {"BLOCK_SIZE": self.block_size}
         self.num_warps = 8
@@ -22,7 +17,7 @@ class ReductionSumFloat16Kernel(TritonPTXKernel):
     def kernel(x_ptr, output_ptr, BLOCK_SIZE: tl.constexpr):
         batch_index = tl.program_id(axis=1)
         offsets = tl.program_id(axis=0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-        values = tl.load(x_ptr + batch_index * VECTOR_SIZE_CONSTEXPR + offsets).to(
+        values = tl.load(x_ptr + batch_index * 4096 + offsets).to(
             tl.float32
         )
         tl.atomic_add(output_ptr + batch_index, tl.sum(values, axis=0))

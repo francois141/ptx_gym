@@ -2,14 +2,13 @@ import torch
 import triton
 import triton.language as tl
 from triton_ptx.kernels.base import TritonPTXKernel
-from triton_ptx.kernels.vector_workload import BATCH_SIZE, VECTOR_SIZE
 
 
 class GELUFloat16Kernel(TritonPTXKernel):
     def __init__(self, *, ptx=None):
         self.block_size = 1024
-        self.size = VECTOR_SIZE
-        self.batch_size = BATCH_SIZE
+        self.size = 4096
+        self.batch_size = 256
         self.constexpr_values = {
             "n_elements": self.size,
             "BLOCK_SIZE": self.block_size,

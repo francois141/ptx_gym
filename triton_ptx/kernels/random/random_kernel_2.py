@@ -10,8 +10,8 @@ class RandomKernel2(TritonPTXKernel):
     """Send three vectors through a tiny, hostile bureaucracy."""
 
     def __init__(self, *, ptx=None):
-        self.size = 512
-        self.batch_size = 4
+        self.size = 4096
+        self.batch_size = 256
         self.block_size = 256
         self.constexpr_values = {"BLOCK_SIZE": self.block_size}
         self.num_warps = 8
@@ -141,14 +141,14 @@ class RandomKernel2(TritonPTXKernel):
         tl.store(output_ptr + aligned_offsets, final_form)
 
     def get_random_input(self, fixed: bool = False):
-        shape = [self.size]
+        shape = (self.batch_size, self.size)
         return tuple(
             torch.randint(0, 256, shape, device="cuda", dtype=torch.int32)
             for _ in range(3)
         )
 
     def get_shape_information(self) -> str:
-        shape = f"({self.size})"
+        shape = f"({self.batch_size}, {self.size})"
         return (
             f"- first_ptr: int32 tensor with shape {shape}\n"
             f"- second_ptr: int32 tensor with shape {shape}\n"

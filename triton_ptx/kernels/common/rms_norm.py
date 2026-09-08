@@ -1,17 +1,12 @@
 import torch
 import triton.language as tl
 from triton_ptx.kernels.base import TritonPTXKernel
-from triton_ptx.kernels.vector_workload import (
-    BATCH_SIZE,
-    VECTOR_SIZE,
-    VECTOR_SIZE_CONSTEXPR,
-)
 
 
 class RMSNormFloat16Kernel(TritonPTXKernel):
     def __init__(self, *, eps=1e-6, ptx=None):
-        self.size = VECTOR_SIZE
-        self.batch_size = BATCH_SIZE
+        self.size = 4096
+        self.batch_size = 256
         self.block_size = 4096
         self.eps = eps
         self.constexpr_values = {"BLOCK_SIZE": self.block_size, "EPS": eps}
@@ -23,16 +18,16 @@ class RMSNormFloat16Kernel(TritonPTXKernel):
         x_ptr, weight_ptr, output_ptr, BLOCK_SIZE: tl.constexpr, EPS: tl.constexpr
     ):
         batch_index = tl.program_id(axis=0)
-        vector_offset = batch_index * VECTOR_SIZE_CONSTEXPR
+        vector_offset = batch_index * 4096
         offsets = tl.arange(0, BLOCK_SIZE)
         squared_sum = 0.0
-        for block_offset in tl.range(0, VECTOR_SIZE_CONSTEXPR, BLOCK_SIZE):
+        for block_offset in tl.range(0, 4096, BLOCK_SIZE):
             values = tl.load(x_ptr + vector_offset + block_offset + offsets).to(
                 tl.float32
             )
             squared_sum += tl.sum(values * values, axis=0)
-        inverse_rms = tl.rsqrt(squared_sum / VECTOR_SIZE_CONSTEXPR + EPS)
-        for block_offset in tl.range(0, VECTOR_SIZE_CONSTEXPR, BLOCK_SIZE):
+        inverse_rms = tl.rsqrt(squared_sum / 4096 + EPS)
+        for block_offset in tl.range(0, 4096, BLOCK_SIZE):
             values = tl.load(x_ptr + vector_offset + block_offset + offsets).to(
                 tl.float32
             )

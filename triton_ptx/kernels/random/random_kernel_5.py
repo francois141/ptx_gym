@@ -10,8 +10,8 @@ class RandomKernel5(TritonPTXKernel):
     """Reconcile three vectors with accounting practices from the abyss."""
 
     def __init__(self, *, ptx=None):
-        self.size = 1280
-        self.batch_size = 4
+        self.size = 4096
+        self.batch_size = 256
         self.block_size = 256
         self.constexpr_values = {"BLOCK_SIZE": self.block_size}
         self.num_warps = 8
@@ -192,14 +192,14 @@ class RandomKernel5(TritonPTXKernel):
         tl.store(output_ptr + aligned_offsets, output)
 
     def get_random_input(self, fixed: bool = False):
-        shape = [self.size]
+        shape = (self.batch_size, self.size)
         return tuple(
             torch.randint(0, 256, shape, device="cuda", dtype=torch.int32)
             for _ in range(3)
         )
 
     def get_shape_information(self) -> str:
-        shape = f"({self.size})"
+        shape = f"({self.batch_size}, {self.size})"
         return (
             f"- first_ptr: int32 tensor with shape {shape}\n"
             f"- second_ptr: int32 tensor with shape {shape}\n"
