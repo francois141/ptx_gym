@@ -153,15 +153,33 @@ class TritonPTXKernel(ABC):
         )
         return result
 
+
     def _benchmark_current_configuration(self, inputs: Any) -> float:
-        """Return median launch latency without timing allocation or compilation."""
+        """Return average launch latency, benchmarking for at least 25 ms."""
         self.forward_triton(inputs)
         torch.cuda.synchronize()
+
+        min_duration_s = 0.025
+        iterations = 0
+
         start = perf_counter()
-        for _ in range(5):
+        while True:
             self.forward_triton(inputs)
+            iterations += 1
+
+            # Avoid synchronizing after every launch.
+            if iterations % 10 == 0:
+                torch.cuda.synchronize()
+                elapsed = perf_counter() - start
+                if elapsed >= min_duration_s:
+                    break
+
         torch.cuda.synchronize()
-        return (perf_counter() - start) * 200.0
+        elapsed = perf_counter() - start
+
+        return (elapsed / iterations) * 1000.0  # ms per launch
+
+
 
     def _tuning_candidates(
         self, tuning_options: Mapping[str, tuple[int, ...]] | None
@@ -188,11 +206,11 @@ class TritonPTXKernel(ABC):
             attribute = constexpr_name.lower()
             value = getattr(self, attribute, None)
             if constexpr_name.startswith("BLOCK_") and isinstance(value, int):
-                options[attribute] = (16, 32, 64, 128, 256)
+                options[attribute] = (32, 64, 128, 256, 512, 1024)
         if isinstance(getattr(self, "num_warps", None), int):
             options["num_warps"] = (4, 8, 16)
         if isinstance(getattr(self, "num_stages", None), int):
-            options["num_stages"] = (1, 2, 3, 4, 5)
+            options["num_stages"] = (2, 3)
         return options
 
     def _current_tuning_config(self) -> dict[str, int]:
