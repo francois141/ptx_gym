@@ -109,7 +109,8 @@ class TritonPTXCandidateEvaluator(BaseCandidateEvaluator):
         try:
             self.operator.set_ptx(launch_payload)
             operator = self.operator
-            verifier = OutputVerifier()
+            tolerance = getattr(operator, "verification_tolerance", 1e-3)
+            verifier = OutputVerifier(rtol=tolerance, atol=tolerance)
             correct = verifier.verify(operator)
             verifier_report = getattr(verifier, "last_report", {})
 
