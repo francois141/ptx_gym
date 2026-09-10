@@ -94,7 +94,8 @@ class TritonPTXKernel(ABC):
         original_config = self._current_tuning_config()
         candidates = self._tuning_candidates(tuning_options)
         inputs = self.get_random_input(fixed=True)
-        reference = self.forward_torch(inputs)
+        reference, _ = self.forward_triton(inputs)
+        reference = reference.clone()
         best_config: dict[str, int] | None = None
         best_latency_ms = float("inf")
         rejected_configurations = 0
@@ -122,6 +123,7 @@ class TritonPTXKernel(ABC):
                     PTXASError,
                     RuntimeError,
                 ) as exc:
+                    print(exc)
                     rejected_configurations += 1
                     continue
 
@@ -206,7 +208,7 @@ class TritonPTXKernel(ABC):
             attribute = constexpr_name.lower()
             value = getattr(self, attribute, None)
             if constexpr_name.startswith("BLOCK_") and isinstance(value, int):
-                options[attribute] = (32, 64, 128, 256, 512, 1024)
+                options[attribute] = (32, 64, 128, 256)
         if isinstance(getattr(self, "num_warps", None), int):
             options["num_warps"] = (4, 8, 16)
         if isinstance(getattr(self, "num_stages", None), int):

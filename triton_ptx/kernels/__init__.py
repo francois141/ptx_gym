@@ -9,6 +9,7 @@ from .common import (
     FlashAttentionFloat16Kernel,
     FusedGEMMAddGELUFloat16Kernel,
     GELUFloat16Kernel,
+    MatrixMultiplicationFloat8Kernel,
     MatrixMultiplicationFloat16Kernel,
     MatrixVectorMultiplicationFloat16Kernel,
     ReductionSumFloat16Kernel,
@@ -27,11 +28,13 @@ from .random import (
 )
 
 MatrixMultiplicationFloat16 = MatrixMultiplicationFloat16Kernel
+MatrixMultiplicationFloat8 = MatrixMultiplicationFloat8Kernel
 
 
 def available_kernels() -> dict[str, type]:
     kernels = {operator.__name__: operator for operator in kernel_list}
     kernels["MatrixMultiplicationFloat16"] = MatrixMultiplicationFloat16
+    kernels["MatrixMultiplicationFloat8"] = MatrixMultiplicationFloat8
     return kernels
 
 
@@ -61,13 +64,13 @@ def resolve_kernel(name: str) -> type:
     return kernels[name]
 
 
-
 common_list = [
     Convolution2DFloat16Kernel,
     DotProductAttentionFloat16Kernel,
     FlashAttentionFloat16Kernel,
     FusedGEMMAddGELUFloat16Kernel,
     GELUFloat16Kernel,
+    MatrixMultiplicationFloat8Kernel,
     MatrixMultiplicationFloat16Kernel,
     MatrixVectorMultiplicationFloat16Kernel,
     ReLUFloat16Kernel,
@@ -92,8 +95,4 @@ adversial_kernel_list = [
     AdversialReLUKernel,
 ]
 
-kernel_list = (
-    common_list
-    + random_kernel_list
-    + adversial_kernel_list
-)
+kernel_list = common_list + random_kernel_list + adversial_kernel_list

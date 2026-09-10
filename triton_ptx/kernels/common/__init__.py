@@ -1,11 +1,14 @@
-"""Float16 kernel variants, using tensor cores for matrix operations."""
+"""Floating-point kernel variants, using tensor cores for matrix operations."""
 
 from .convolution_2d import Convolution2DFloat16Kernel
 from .dot_product_attention import DotProductAttentionFloat16Kernel
 from .flash_attention import FlashAttentionFloat16Kernel
 from .fused_gemm_add_gelu import FusedGEMMAddGELUFloat16Kernel
 from .gelu import GELUFloat16Kernel
-from .matrix_multiplication import MatrixMultiplicationFloat16
+from .matrix_multiplication import (
+    MatrixMultiplicationFloat8,
+    MatrixMultiplicationFloat16,
+)
 from .matrix_vector_multiplication import MatrixVectorMultiplicationFloat16Kernel
 from .reduction_sum import ReductionSumFloat16Kernel
 from .relu import ReLUFloat16Kernel
@@ -15,6 +18,7 @@ from .softmax import SoftmaxFloat16Kernel
 from .swiglu import SwiGLUFloat16Kernel
 
 MatrixMultiplicationFloat16Kernel = MatrixMultiplicationFloat16
+MatrixMultiplicationFloat8Kernel = MatrixMultiplicationFloat8
 
 __all__ = [
     "Convolution2DFloat16Kernel",
@@ -22,6 +26,7 @@ __all__ = [
     "FlashAttentionFloat16Kernel",
     "FusedGEMMAddGELUFloat16Kernel",
     "GELUFloat16Kernel",
+    "MatrixMultiplicationFloat8Kernel",
     "MatrixMultiplicationFloat16Kernel",
     "MatrixVectorMultiplicationFloat16Kernel",
     "RMSNormFloat16Kernel",

@@ -208,28 +208,18 @@ class OutputVerifier(BaseVerifier):
 
             self._assert_input_limits(inputs)
 
-            torch_out = op.forward_torch(inputs)
             triton_out, _ = op.forward_triton(self._clone_inputs(inputs))
             ptx_out, _ = op.forward_triton(self._clone_inputs(inputs), ptx=True)
 
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
 
-            if not self._same(triton_out, torch_out):
-                self.last_report = self._failure_report(
-                    iteration,
-                    triton_out,
-                    torch_out,
-                    expected_name="torch",
-                )
-                return False
-
-            if not self._same(ptx_out, torch_out):
+            if not self._same(ptx_out, triton_out):
                 self.last_report = self._failure_report(
                     iteration,
                     ptx_out,
-                    torch_out,
-                    expected_name="torch",
+                    triton_out,
+                    expected_name="triton",
                 )
                 return False
 

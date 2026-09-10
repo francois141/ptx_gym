@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import torch
 import torch.nn.functional as F
-import triton.language as tl
-
 import triton
+import triton.language as tl
 from triton_ptx.kernels.base import TritonPTXKernel
 
 
@@ -23,7 +22,7 @@ class Convolution2DFloat16Kernel(TritonPTXKernel):
         self.k_dim = self.input_channels * self.kernel_height * self.kernel_width
         self.block_m = 128
         self.block_n = 128
-        self.block_k = 32
+        self.block_k = 64
         self.constexpr_values = {
             "INPUT_CHANNELS": self.input_channels,
             "INPUT_HEIGHT": self.input_height,
@@ -36,8 +35,17 @@ class Convolution2DFloat16Kernel(TritonPTXKernel):
             "BLOCK_N": self.block_n,
             "BLOCK_K": self.block_k,
         }
-        self.num_warps = 4
-        self.init_compiled_kernels(ptx=ptx)
+        self.num_warps = 8
+        self.init_compiled_kernels(
+            ptx=ptx,
+            autotune=True,
+            tuning_options={
+                "block_m": (16, 32, 64, 128),
+                "block_n": (16, 32, 64, 128),
+                "block_k": (16, 32, 64),
+                "num_warps": (4, 8, 16),
+            },
+        )
 
     @staticmethod
     def kernel(
@@ -65,35 +73,38 @@ class Convolution2DFloat16Kernel(TritonPTXKernel):
         output_pixel = offsets_m % output_pixels
         output_row = output_pixel // OUTPUT_WIDTH
         output_col = output_pixel % OUTPUT_WIDTH
-        accumulator = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+        input_base = (
+            batch * INPUT_CHANNELS * INPUT_HEIGHT * INPUT_WIDTH
+            + output_row * INPUT_WIDTH
+            + output_col
+        )
+        # Keep spatial pixels contiguous in the right operand and the output.
+        accumulator = tl.zeros((BLOCK_N, BLOCK_M), dtype=tl.float32)
+        weight_ptrs = weight_ptr + offsets_n[:, None] * K_DIM + offsets_k[None, :]
 
-        for k_start in range(0, K_DIM, BLOCK_K):
+        for k_start in tl.static_range(0, K_DIM, BLOCK_K):
             k_offsets = k_start + offsets_k
-            input_channel = k_offsets // (3 * 3)
-            kernel_offset = k_offsets % (3 * 3)
-            kernel_row = kernel_offset // 3
-            kernel_col = kernel_offset % 3
-            input_ptrs = (
-                x_ptr
-                + batch[:, None] * INPUT_CHANNELS * INPUT_HEIGHT * INPUT_WIDTH
-                + input_channel[None, :] * INPUT_HEIGHT * INPUT_WIDTH
-                + (output_row[:, None] + kernel_row[None, :]) * INPUT_WIDTH
-                + output_col[:, None]
-                + kernel_col[None, :]
+            input_channel = k_offsets // 9
+            kernel_offset = k_offsets % 9
+            input_offsets = (
+                input_channel * INPUT_HEIGHT * INPUT_WIDTH
+                + (kernel_offset // 3) * INPUT_WIDTH
+                + kernel_offset % 3
             )
-            weight_ptrs = weight_ptr + offsets_n[None, :] * K_DIM + k_offsets[:, None]
+            input_ptrs = x_ptr + input_offsets[:, None] + input_base[None, :]
             accumulator = tl.dot(
-                tl.load(input_ptrs),
                 tl.load(weight_ptrs),
+                tl.load(input_ptrs, eviction_policy="evict_last"),
                 acc=accumulator,
                 out_dtype=tl.float32,
             )
+            weight_ptrs += BLOCK_K
 
         output_ptrs = (
             output_ptr
-            + batch[:, None] * OUTPUT_CHANNELS * output_pixels
-            + offsets_n[None, :] * output_pixels
-            + output_pixel[:, None]
+            + batch[None, :] * OUTPUT_CHANNELS * output_pixels
+            + offsets_n[:, None] * output_pixels
+            + output_pixel[None, :]
         )
         tl.store(output_ptrs, accumulator.to(tl.float16))
 
