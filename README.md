@@ -1,317 +1,211 @@
+<p align="center">
+  <img alt="PTX Gym logo" src="logo.png" width="200">
+</p>
 
-| **`Documentation`** | **`Nightly Wheels`** |
-|-------------------- | -------------------- |
-| [![Documentation](https://github.com/triton-lang/triton/actions/workflows/documentation.yml/badge.svg)](https://triton-lang.org/) | [![Wheels](https://github.com/triton-lang/triton/actions/workflows/wheels.yml/badge.svg)](https://github.com/triton-lang/triton/actions/workflows/wheels.yml) |
+<p align="center">
+  <strong>An environment for testing whether LLMs can compile Triton kernels (or build compilers that compile kernels) to PTX directly, without the Triton compiler's lowering pipeline.</strong>
+</p>
 
-# Triton Conference 2025
+<p align="center">
+  <img alt="Status: research preview" src="https://img.shields.io/badge/status-research%20preview-orange">
+  <img alt="Task: Triton to PTX" src="https://img.shields.io/badge/task-Triton%20%E2%86%92%20PTX-blue">
+  <img alt="Hardware: NVIDIA GPU" src="https://img.shields.io/badge/hardware-NVIDIA%20GPU-76B900">
+</p>
 
-![Triton Registration Banner](https://github.com/user-attachments/assets/b4b6972a-857c-417f-bf2c-f16f38a358c0)
+<p align="center">
+  <a href="#quickrun">Quickrun</a> ·
+  <a href="#overview">Overview</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#kernel-suite">Kernel suite</a>
+</p>
 
-### Registration
-
-The 3rd Triton conference is scheduled to take place on October 21, 2025. Click [here](https://tritonconference.eventbuilder.com/TritonDeveloperConference) to register!
-
-### Poster Submission
-
-We invite members of the Triton community who are attending the Triton Developer Conference to present posters about their Triton-related technical work.
-
-Please submit basic information of your poster, including author information and abstract using this [form](https://forms.gle/QfgTF8o1CWNENAnA7).
-
-**Important Dates**
-- Submission: 10/1/2025
-- Author notification: 10/7/2025
-- Final version (PDF): 10/14/2025
-
-# Triton
-
-This is the development repository of Triton, a language and compiler for writing highly efficient custom Deep-Learning primitives. The aim of Triton is to provide an open-source environment to write fast code at higher productivity than CUDA, but also with higher flexibility than other existing DSLs.
-
-The foundations of this project are described in the following MAPL2019 publication: [Triton: An Intermediate Language and Compiler for Tiled Neural Network Computations](http://www.eecs.harvard.edu/~htk/publication/2019-mapl-tillet-kung-cox.pdf). Please consider citing this work if you use Triton!
-
-The [official documentation](https://triton-lang.org) contains installation instructions and tutorials.  See also these third-party [Triton puzzles](https://github.com/srush/Triton-Puzzles), which can all be run using the Triton interpreter -- no GPU required.
-
-# Quick Installation
-
-You can install the latest stable release of Triton from pip:
-
-```shell
-pip install triton
-```
-
-Binary wheels are available for CPython 3.10-3.14.
-
-# Install from source
-
-```shell
-git clone https://github.com/triton-lang/triton.git
-cd triton
-
-pip install -r python/requirements.txt # build-time dependencies
-pip install -e .
-```
-
-Or with a virtualenv:
-
-```shell
-git clone https://github.com/triton-lang/triton.git
-cd triton
-
-python -m venv .venv --prompt triton
-source .venv/bin/activate
-
-pip install -r python/requirements.txt # build-time dependencies
-pip install -e .
-```
-
-# Building with a custom LLVM
-
-Triton uses LLVM to generate code for GPUs and CPUs.  Normally, the Triton build
-downloads a prebuilt LLVM, but you can also build and use LLVM from source.
-
-LLVM does not have a stable API, so the Triton build will not work at an
-arbitrary LLVM version.
-
-For convenience, use the following command to build LLVM and install Triton with the custom LLVM:
-
-```shell
-make dev-install-llvm
-```
-
-<details>
-<summary>
-Alternatively, follow these steps to build LLVM from source manually.
-</summary>
-
-1. Find the version of LLVM that Triton builds against.  Check
-`cmake/llvm-hash.txt` to see the current version. For example, if it says:
-       49af6502c6dcb4a7f7520178bd14df396f78240c.
-
-   This means that the version of Triton you have builds against
-   [LLVM](https://github.com/llvm/llvm-project) 49af6502.
-
-2. `git checkout` LLVM at this revision.  Optionally, make additional
-   modifications to LLVM.
-
-3. [Build LLVM](https://llvm.org/docs/CMake.html).  For example, you might run:
-
-       $ cd $HOME/llvm-project  # your clone of LLVM.
-       $ mkdir build
-       $ cd build
-       $ cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_ASSERTIONS=ON ../llvm -DLLVM_ENABLE_PROJECTS="mlir;llvm;lld" -DLLVM_TARGETS_TO_BUILD="host;NVPTX;AMDGPU"
-       $ ninja
-
-4. Grab a snack, this will take a while.
-
-5. Build Triton as above, but set the following environment variables:
-
-       # Modify as appropriate to point to your LLVM build.
-       $ export LLVM_BUILD_DIR=$HOME/llvm-project/build
-
-       $ cd <triton install>
-       $ LLVM_INCLUDE_DIRS=$LLVM_BUILD_DIR/include \
-         LLVM_LIBRARY_DIR=$LLVM_BUILD_DIR/lib \
-         LLVM_SYSPATH=$LLVM_BUILD_DIR \
-         pip install -e .
-
-</details>
-
-# Tips for building
-
-- Set `TRITON_BUILD_WITH_CLANG_LLD=true` as an environment variable to use clang
-  and lld.  lld in particular results in faster builds.
-
-- Set `TRITON_BUILD_WITH_CCACHE=true` to build with ccache.
-
-- Set `TRITON_HOME=/some/path` to change the location of the `.triton`
-  directory where Triton's cache is located and downloads are stored
-  during the build. By default, this is the user's home directory. It
-  can be changed anytime.
-
-- If you're running out of memory when building Triton, specify the `MAX_JOBS`
-  environment variable (to the `pip install -e .` command) to limit the
-  number of jobs.
-
-- Pass `--no-build-isolation` to `pip install` to make nop builds faster.
-  Without this, every invocation of `pip install` uses a different symlink to
-  cmake, and this forces ninja to rebuild most of the `.a` files.
-
-- The build system creates a `compile_commands.json` file under the Triton repo
-  directory. This file is used by VSCode IntelliSense and clangd to provide
-  code completion and other features for C++ code.
-
-  If IntelliSense does not work, you can try the following steps:
-
-    - Do a local build. Run command `pip install -e .`.
-    - Get the full path to the `compile_commands.json` file produced by the build:
-      `find ./build -name 'compile_commands.json' | xargs readlink -f`.
-      You might get a full path similar to `/Users/{username}/triton/build/cmake.macosx-11.1-arm64-cpython-3.12/compile_commands.json`.
-    - In VSCode, install the
-      [C/C++
-      extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cpptools),
-      then open the command palette (`Shift + Command + P` on Mac, or `Shift +
-      Ctrl + P` on Windows/Linux) and open `C/C++: Edit Configurations (UI)`.
-    - Open "Advanced Settings" and paste the full path to
-      `compile_commands.json` into the "Compile Commands" textbox.
-
-# Running tests
-
-There currently isn't a turnkey way to run all the Triton tests, but you can
-follow the following recipe:
-
-```shell
-# One-time setup.  Note this will reinstall local Triton because torch
-# overwrites it with the public version.
-$ make dev-install
-
-# To run all tests (requires a GPU)
-$ make test
-
-# Or, to run tests without a gpu
-$ make test-nogpu
-```
-
-# Tips for hacking
-
-For detailed instructions on how to debug Triton's frontend, please refer to this [tutorial](https://triton-lang.org/main/programming-guide/chapter-3/debugging.html). The following includes additional tips for hacking on Triton's backend.
-
-**Configuration knobs**
-
-See [`python/triton/knobs.py`](python/triton/knobs.py) for the full list of configuration knobs. You can set those knobs directly in python or use environment variables to control them. Below are some of the environment variables you can specify (see `knobs.py` for the full list):
-
-- `MLIR_ENABLE_DUMP=1` dumps the IR before every MLIR pass Triton runs, for all
-   kernels. Use `MLIR_ENABLE_DUMP=kernelName` to dump for a specific kernel only.
-  - Triton cache can interfere with the dump. In cases where `MLIR_ENABLE_DUMP=1` does not work, try cleaning your triton cache: `rm -r ~/.triton/cache/*`.
-- `MLIR_DUMP_PATH` specifies where `MLIR_ENABLE_DUMP` will dump to. If unset will dump to stderr.
-- `LLVM_IR_ENABLE_DUMP=1` dumps the IR before every pass run over the LLVM IR.
-- `TRITON_REPRODUCER_PATH=<reproducer_path>` will generate an MLIR reproducer file
-  at `<reproducer_path>` before each MLIR compiler stage. If any of the stages fail,
-  `<reproducer_path>` will be a local MLIR reproducer captured right before the failing pass.
-- `TRITON_INTERPRET=1` uses the Triton interpreter instead of running on the
-  GPU.  You can insert Python breakpoints in your kernel code!
-- `TRITON_ENABLE_LLVM_DEBUG=1` passes `-debug` to LLVM, printing a lot of
-  debugging information to stdout.  If this is too noisy, run with just
-  `TRITON_LLVM_DEBUG_ONLY` instead to limit the output.
-  - An alternative way to reduce output noisiness is running with
-  `LLVM_IR_ENABLE_DUMP=1`, extract the IR before the LLVM pass of interest, and
-  then run LLVM's `opt` standalone, perhaps passing `-debug-only=foo` on the
-  command line.
-
-- `TRITON_LLVM_DEBUG_ONLY=<comma-separated>` is the equivalent of LLVM's
-  `-debug-only` command-line option. This limits the LLVM debug output to
-  specific pass or component names (which are specified using `#define
-  DEBUG_TYPE` throughout LLVM and Triton) in order to allow the debug output to
-  be less noisy. `TRITON_LLVM_DEBUG_ONLY` allows for one or more comma
-  separated values to be specified (eg
-  `TRITON_LLVM_DEBUG_ONLY="tritongpu-remove-layout-conversions"` or
-  `TRITON_LLVM_DEBUG_ONLY="tritongpu-remove-layout-conversions,regalloc"`).
-- `TRITON_ENABLE_ASAN=1` invokes the LLVM address sanitizer for
-  memory leak and out of bounds access detection. Currently only supported on the AMD
-  backend. This must be run using the ASAN libraries documented [here](https://rocm.docs.amd.com/projects/llvm-project/en/latest/conceptual/using-gpu-sanitizer.html).
-  - When enabling the address sanitizer it is recommended to disable various memory caching strategies
-  both within the ROCm stack and PyTorch. This will give the address sanitizer the best chance at finding the
-  memory fault where it originates. See this [test](https://github.com/triton-lang/triton/blob/main/third_party/amd/python/test/test_address_sanitizer.py) for more details.
-
-- `USE_IR_LOC={ttir,ttgir}` reparses the IR such that the location information
-  will be the line number of the IR file with that particular extension,
-  instead of line number of the python file. This can provide a direct mapping
-  from the IR to llir/ptx. When used with performance tools, it can provide a
-  breakdown on IR instructions.
-- `TRITON_PRINT_AUTOTUNING=1` prints out the best autotuning config and total time
-  spent for each kernel after autotuning is complete.
-- `DISABLE_LLVM_OPT` will disable llvm optimizations for make_llir and make_ptx
-  if its value is true when parsing as Bool. Otherwise, it will be parsed as a list
-  of flags to disable llvm optimizations. One usage case is
-  `DISABLE_LLVM_OPT="disable-lsr"`
-  Loop strength reduction is known to cause up to 10% performance changes for
-  certain kernels with register pressure.
-- `TRITON_ALWAYS_COMPILE=1` forces to compile kernels regardless of cache hit.
-- `MLIR_ENABLE_TIMING` dumps the timing information for each MLIR pass.
-- `LLVM_ENABLE_TIMING` dumps the timing information for each LLVM pass.
-- `TRITON_DEFAULT_FP_FUSION` overrides the default behavior of allowing fp fusion (mul+add->fma).
-- `MLIR_ENABLE_DIAGNOSTICS=<comma-separated>` controls diagnostic emission in MLIR.
-  Options are: `warnings`, `remarks`, `stacktraces`, `operations`.
-  Use comma-separated values to customize output. For example,
-  `MLIR_ENABLE_DIAGNOSTICS=remarks,operations` enables remarks and IR operations,
-  while `MLIR_ENABLE_DIAGNOSTICS=warnings,stacktraces` enables warnings with
-  stacktraces. By default, only errors are shown. Setting `warnings` includes
-  errors and warnings; `remarks` includes errors, warnings, and remarks.
-- `MLIR_ENABLE_REMARK` is deprecated. Please use `MLIR_ENABLE_DIAGNOSTICS=remarks`.
-- `TRITON_KERNEL_DUMP` enables the dumping of the IR from each compilation stage and the final ptx/amdgcn.
-- `TRITON_DUMP_DIR` specifies the directory to save the dumped IR and ptx/amdgcn when `TRITON_KERNEL_DUMP` is set to 1.
-- `TRITON_KERNEL_OVERRIDE` enables the override of the compiled kernel with a user-specified IR/ptx/amdgcn at the beginning of each compilation stage.
-- `TRITON_OVERRIDE_DIR` specifies the directory from which to load the IR/ptx/amdgcn files when `TRITON_KERNEL_OVERRIDE` is set to 1.
-- `TRITON_F32_DEFAULT` sets the default input precision of `tl.dot` when using 32-bit floats, which can be either `ieee`, `tf32`, or `tf32x3`.
-- `TRITON_FRONT_END_DEBUGGING=1` disables exception wrapping when an error occurs in the compiler frontend, allowing the full stack trace to be seen.
-- `TRITON_DISABLE_LINE_INFO=1` removes all line information from the module.
-- `PTXAS_OPTIONS` passes additional command-line options to the PTX assembler `ptxas` (only on NVIDIA).
-- `LLVM_EXTRACT_DI_LOCAL_VARIABLES` emit full debug info, allowing for eval of values in gpu debuggers (ie cuda-gdb, rocm-gdb etc)
-
-> [!NOTE]
-> Some of these environment variables don't have a knob in `knobs.py`-- those are only relevant to the C++ layer(s), hence they don't exist in the python layer.
-
-**Kernel Override Steps**
+## Quickrun
 
 ```bash
-export TRITON_ALWAYS_COMPILE=1
-export TRITON_KERNEL_DUMP=1
-export TRITON_DUMP_DIR=<dump_dir>
-export TRITON_KERNEL_OVERRIDE=1
-export TRITON_OVERRIDE_DIR=<override_dir>
-# Step 1: Run the kernel once to dump kernel's IRs and ptx/amdgcn in $TRITON_DUMP_DIR
-# Step 2: Copy $TRITON_DUMP_DIR/<kernel_hash> to $TRITON_OVERRIDE_DIR
-# Step 3: Delete the stages that you do not want to override and modify the stage you do want to override
-# Step 4: Run the kernel again to see the overridden result
+git clone --recursive https://github.com/francois141/ptx_gym.git
+cd ptx_gym
+
+uv venv .ptx_gym_env
+source .ptx_gym_env/bin/activate
+uv pip install torch
+MAX_JOBS=64 uv pip install -e . -v     # builds Triton, installs triton + ptx_gym
+
+export PTX_MEMORY_SANITIZER=$(which compute-sanitizer)
+export NCU_PATH=$(which ncu)
+
+python quick_start.py 
 ```
 
-**Compiler Pipeline Inspection Steps**
-To introspect the pipeline `add_stages`, before running your kernels, simply set
-the add_stages_inspection_hook like so:
+## Overview
+
+A normal Triton compile lowers a kernel step by step: TTIR, then TTGIR, then
+LLVM/NVVM IR, then PTX, with a fixed set of hand-written passes. **AI
+lowering** removes that pipeline. A model writes the PTX for a Triton kernel
+directly, and the kernel keeps the same interface it would have had after a
+normal compile.
+
+PTX Gym checks whether such PTX is valid and fast. For a given kernel it:
+
+1. **Fixes the compilation contract** `(c, I, h)`:
+   - `c`: compile-time values (`tl.constexpr` values, shapes, strides),
+   - `I`: runtime launch interface (grid, threads per CTA, argument ABI),
+   - `h`: target GPU (for example `sm_89`, `sm_90a`, `sm_100a`).
+
+   Each baseline is autotuned on the target GPU first. The best configuration
+   found is then used for every comparison.
+2. **Exposes** the Triton source, the constexpr values, and the PTX entry
+   signature Triton would produce. With these, a model can write a drop-in
+   PTX body.
+3. **Accepts** a candidate PTX program plus its CTA dimensions.
+4. **Assembles, sanitizes, tests, benchmarks, and profiles** the candidate.
+   It uses the same Triton launcher, so the grid, the argument passing, and
+   the launch path are identical to the Triton reference.
+5. **Returns** a structured, JSON-serializable result. An agent can use this
+   result to improve its next candidate.
+
+A candidate **passes** when it assembles for the target, passes the memory
+and race checks, and gives the same outputs as the Triton reference within
+tolerance on randomized inputs. Its score is `speedup_vs_triton`, the Triton
+p50 latency divided by the candidate's p50 latency.
+
+PTX Gym does not depend on any model. It evaluates PTX and does not care how
+that PTX was produced. Feel free to use the environment in many creative ways!
+
+### Environment variables
+
+| Variable | Needed for |
+| --- | --- |
+| `PTX_MEMORY_SANITIZER` | Path to the `compute-sanitizer` executable. Required when the sanitizer is on, which is the default. |
+| `NCU_PATH` | Path to the `ncu` executable. Required when NCU profiling is on, which is the default. |
+
+## Quick start
+
+The script below walks through the whole workflow: pick a kernel, read what a
+model needs to write PTX for it, submit a candidate, and read the verdict. Run
+it after setting the [environment variables](#environment-variables).
 
 ```python
-def inspect_stages(_self, stages, options, language, capability):
-    # inspect or modify add_stages here
-triton.knobs.runtime.add_stages_inspection_hook = inspect_stages
+from ptx_gym import (
+    Payload,
+    TritonPTXCandidateEvaluator,
+    dump_kernel_ptx,
+    evaluate_candidate,
+    get_kernel_data,
+    list_kernels,
+    resolve_kernel,
+)
+from ptx_gym.helpers.triton import dump_kernel_ptx as dump_operator_ptx
+
+KERNEL_ID = "ReLUFloat16Kernel"
+
+# 1. List the kernels. Any of these names can be used as a kernel_id.
+print(list_kernels())
+
+# 2. Get everything a model needs to write PTX for the kernel. The first call
+#    autotunes the Triton baseline and caches it for the rest of the process,
+#    so get_kernel_data, dump_kernel_ptx, and evaluate_candidate all agree on
+#    the same launch configuration.
+data = get_kernel_data(KERNEL_ID)
+print(data["source"])            # Triton source of the kernel
+print(data["system"])            # {"target": "sm_..", "version": .., "address_size": 64}
+print(data["num_warps"])         # CTA size is num_warps * 32 threads
+print(data["constexpr_values"])  # constexpr values baked into the kernel
+print(data["ptx_signature"])     # [{"name": .., "ptx_type": ..}, ...] the entry must match
+
+# 3. Submit a candidate. Here it is Triton's own PTX, which should pass with a
+#    speedup close to 1.0 (a quick check that the setup works). Put your
+#    model's PTX here instead.
+candidate_ptx = dump_kernel_ptx(KERNEL_ID)
+result = evaluate_candidate(
+    KERNEL_ID,
+    {"ptx": candidate_ptx, "num_threads_x": data["num_warps"] * 32},
+)
+
+# 4. Read the verdict. The result is a plain JSON dict.
+print(result["passed"], result["message"])
+if result["passed"]:
+    print(f"{result['p50']:.4f} ms vs {result['triton_p50']:.4f} ms Triton (p50), "
+          f"{result['speedup_vs_triton']:.3f}x speedup")
+
+# 5. Optional: build the evaluator yourself to choose which checks run.
+#    It autotunes its own baseline, whose configuration can differ from the
+#    one above, so take the reference PTX and CTA size from evaluator.operator.
+evaluator = TritonPTXCandidateEvaluator(
+    resolve_kernel(KERNEL_ID),
+    enable_sanitizer=True,    # compute-sanitizer memcheck/racecheck/...
+    enable_ncu_report=True,   # Nsight Compute profile for passing candidates
+    enable_volta=False,       # symbolic equivalence proof (see below)
+)
+operator = evaluator.operator
+result = evaluator.evaluate(
+    Payload(ptx=dump_operator_ptx(operator), threads_x=operator.num_warps * 32)
+)
+print(result.passed, result.speedup_vs_triton, result.message)
+print(result.to_json())
 ```
 
-# Changelog
+A few rules apply to every candidate:
 
-Version 2.0 is out! New features include:
+- `ptx` is the full PTX module. Its entry signature must match
+  `ptx_signature`.
+- `threads_x`, `threads_y`, and `threads_z` set the CTA dimensions, at most
+  1024 threads in total. If the PTX declares `.reqntid` or `.maxntid`, these
+  values must agree with it. In dicts, `num_threads_x`, `num_threads_y`, and
+  `num_threads_z` are accepted as aliases.
+- Autotuning picks among configurations that often tie, so a new process may
+  choose a different one. Take the kernel data, the reference PTX, and the
+  evaluation from the same process.
 
-- Many, many bug fixes
-- Performance improvements
-- Backend rewritten to use MLIR
-- Support for kernels that contain back-to-back matmuls (e.g., flash attention)
 
-# Contributing
+### Formal verification with Volta
 
-Community contributions are more than welcome, whether it be to fix bugs or to add new features at [github](https://github.com/triton-lang/triton/). For more detailed instructions, please visit our [contributor's guide](CONTRIBUTING.md).
+Releasing more details about this section soon!
 
-# Compatibility
+### Triton AI Compiler
 
-Supported Platforms:
+Releasing more details about this section soon!
+## Kernel suite
 
-- Linux
+Each kernel is a subclass of
+[`TritonPTXKernel`](ptx_gym/kernels/base.py). A kernel instance fixes the
+problem size and declares the autotuning space. Pass its class name as the
+`kernel_id`.
 
-Supported Hardware:
+**Common kernels** ([`kernels/common`](ptx_gym/kernels/common)). Every one
+comes in `Float16` and `Float8` (E4M3) versions:
 
-- NVIDIA GPUs (Compute Capability 8.0+)
-- AMD GPUs (ROCm 6.2+)
-- Under development: CPUs
+| Family | Classes |
+| --- | --- |
+| GEMM-like | `MatrixMultiplicationFloat{16,8}`, `MatrixVectorMultiplicationFloat*Kernel`, `Convolution2DFloat*Kernel`, `FusedGEMMAddSiLUFloat*Kernel`, `FusedGEMMAddGELUFloat*Kernel` |
+| Reductions and normalization | `SoftmaxFloat*Kernel`, `RMSNormFloat*Kernel`, `ReductionSumFloat*Kernel`, `RoPEFloat*Kernel` |
+| Elementwise | `ReLUFloat*Kernel`, `SiLUFloat*Kernel`, `SigmoidFloat*Kernel`, `GELUFloat*Kernel`, `SwiGLUFloat*Kernel`, `AddFloat*Kernel` |
 
-# Development Container (Dev Container)
+**Kernels from recent papers** ([`kernels/papers`](ptx_gym/kernels/papers)).
+These are the authors' official Triton implementations. We only removed masks
+that the fixed problem sizes make unnecessary.
 
-**Dev Containers** for the Triton project are available from
-the [triton-dev-containers repository](https://github.com/redhat-et/triton-dev-containers).
+| Paper | Classes |
+| --- | --- |
+| FlashAttention (NeurIPS 2022) | `FlashAttentionNeurIPS2022Forward`, `...Backward` |
+| FlashSinkhorn (ICML 2026) | `FlashSinkhornFusedSchurMatvec` |
+| Forgetting Attention (ICLR 2025) | `ForgettingAttentionICLR2025Forward`, `...Backward` |
+| SageAttention (ICLR 2025) | `SageAttentionICLR2025` |
+| BitDelta (NeurIPS 2024) | `BitDeltaNeurIPS2024Matmul`, `BitDeltaNeurIPS2024BatchedMatmul` |
+| Lion (NeurIPS 2023) | `LionNeurIPS2023Optimizer` |
+| Dion | `Dion2TritonPostOrthogonalize` |
+| Mamba-2 (ICML 2024) | `Mamba2ChunkScanForward`, `Mamba2ChunkStateForward` |
+| Others | `MambaICLR2026*`, `ChanMixICLR2026*`, `HouseholderDiagonalizedLinearAttentionICLR2026*` |
 
-### Key Benefits:
-- **Consistency**: All developers can work with the same development
-  environment, ensuring uniform behavior across different systems.
-- **Isolation**: The container prevents potential conflicts with software
-  installed on your local machine.
-- **Portability**: Easily share the development environment with team members,
-  minimizing onboarding time and setup issues.
+**Semantic probes.** These check whether a model follows what the source
+actually computes:
 
-### How to Use the Dev Container:
-
-For detailed instructions on how to use the dev containers, please see
-the [dev container user guide](https://github.com/redhat-et/triton-dev-containers/blob/main/.devcontainer/devcontainer.md).
+- [`kernels/random`](ptx_gym/kernels/random): `RandomKernel1`-`5`. Each is
+  about 150 lines of generated integer code that implements no known
+  algorithm. They use bitwise operations, hashing, `tl.sum`, `tl.max`,
+  `tl.static_range`, `tl.where`, and hints.
+- [`kernels/adversial`](ptx_gym/kernels/adversial): kernels whose names,
+  comments, or familiar structure point to the wrong computation. Examples: a
+  matmul that subtracts instead of adding, a FlashAttention variant with a
+  modified scale, a "ReLU" kernel whose comments ask for GELU, and an FP32
+  matmul (`MatrixMultiplicationFloat32`) whose comment claims tensor cores are
+  fine despite `input_precision="ieee"`.

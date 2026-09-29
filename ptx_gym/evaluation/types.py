@@ -1,0 +1,341 @@
+from __future__ import annotations
+
+import json
+import math
+import re
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any, cast
+
+MAX_THREADS_PER_CTA = 1024
+_THREAD_DIRECTIVE_PATTERN = re.compile(
+    r"^\s*\.(reqntid|maxntid)\s+(\d+)(?:\s*,\s*(\d+))?"
+    r"(?:\s*,\s*(\d+))?\s*$",
+    re.MULTILINE,
+)
+
+
+def is_valid_tuning_config(config: Mapping[object, object]) -> bool:
+    """Return whether a tuning config contains supported scalar values."""
+    return all(
+        isinstance(name, str)
+        and (isinstance(value, bool) or (isinstance(value, int) and value > 0))
+        for name, value in config.items()
+    )
+
+
+@dataclass(frozen=True)
+class Payload:
+    """Compiled PTX payload and launch dimensions."""
+
+    ptx: str
+    threads_x: int
+    threads_y: int | None = None
+    threads_z: int | None = None
+
+    def __post_init__(self) -> None:
+        if not self.ptx.strip():
+            raise ValueError('Candidate payload is missing non-empty "ptx" code.')
+
+        for name in ("threads_x", "threads_y", "threads_z"):
+            value = getattr(self, name)
+            if value is not None and (
+                not isinstance(value, int) or isinstance(value, bool) or value <= 0
+            ):
+                raise ValueError(
+                    f'Candidate payload field "{name}" must be a positive integer.'
+                )
+
+        thread_dimensions = (
+            self.threads_x,
+            self.threads_y or 1,
+            self.threads_z or 1,
+        )
+        thread_count = math.prod(thread_dimensions)
+        if thread_count > MAX_THREADS_PER_CTA:
+            raise ValueError(
+                "Candidate payload launches "
+                f"{thread_count} threads per CTA; CUDA permits at most "
+                f"{MAX_THREADS_PER_CTA}."
+            )
+
+        directive = _THREAD_DIRECTIVE_PATTERN.search(self.ptx)
+        if directive is None:
+            return
+
+        directive_name, threads_x, threads_y, threads_z = directive.groups()
+        directive_dimensions = (
+            int(threads_x),
+            int(threads_y) if threads_y is not None else 1,
+            int(threads_z) if threads_z is not None else 1,
+        )
+        if directive_name == "reqntid" and thread_dimensions != directive_dimensions:
+            raise ValueError(
+                "Candidate payload launch dimensions "
+                f"{thread_dimensions} do not match PTX .reqntid "
+                f"{directive_dimensions}."
+            )
+        if directive_name == "maxntid" and any(
+            actual > maximum
+            for actual, maximum in zip(thread_dimensions, directive_dimensions)
+        ):
+            raise ValueError(
+                "Candidate payload launch dimensions "
+                f"{thread_dimensions} exceed PTX .maxntid "
+                f"{directive_dimensions}."
+            )
+
+    @classmethod
+    def from_input(cls, payload: Payload | dict[str, Any]) -> Payload:
+        if isinstance(payload, cls):
+            return payload
+        if not isinstance(payload, dict):
+            raise ValueError("Candidate payload must be a dictionary.")
+
+        return cls(
+            ptx=payload.get("ptx", ""),
+            threads_x=cast(
+                int,
+                payload.get("threads_x", payload.get("num_threads_x")),
+            ),
+            threads_y=payload.get("threads_y", payload.get("num_threads_y")),
+            threads_z=payload.get("threads_z", payload.get("num_threads_z")),
+        )
+
+    def to_launch_dict(self) -> dict[str, Any]:
+        """Return the payload in evaluator launch configuration format."""
+        payload: dict[str, Any] = {
+            "ptx": self.ptx,
+            "num_threads_x": self.threads_x,
+        }
+        if self.threads_y is not None:
+            payload["num_threads_y"] = self.threads_y
+        if self.threads_z is not None:
+            payload["num_threads_z"] = self.threads_z
+        return payload
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key
+            if isinstance(key, (str, int, float, bool)) or key is None
+            else str(key): _json_safe(item)
+            for key, item in value.items()
+        }
+
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+
+    if isinstance(value, Path):
+        return str(value)
+
+    if hasattr(value, "detach") and hasattr(value, "cpu") and hasattr(value, "tolist"):
+        return _json_safe(value.detach().cpu().tolist())
+
+    if hasattr(value, "item") and callable(value.item):
+        try:
+            return _json_safe(value.item())
+        except (TypeError, ValueError):
+            pass
+
+    # Infinity/NaN are valid Python floats but not valid JSON tokens; json.dumps
+    # emits bare Infinity/NaN which spec-compliant parsers (e.g. Node) reject.
+    # Represent them as null instead.
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+
+    try:
+        json.dumps(value, allow_nan=False)
+        return value
+    except (TypeError, ValueError):
+        return str(value)
+
+
+@dataclass(frozen=True)
+class Timing:
+    p20: float
+    p50: float
+    p80: float
+    p90: float
+    p95: float
+    p99: float
+
+
+@dataclass(order=True)
+class EvaluatedCandidate:
+    sort_index: tuple[int, float] = field(init=False, repr=False)
+
+    kernel_name: str = field(compare=False)
+    git_commit_hash: str = field(compare=False)
+
+    compiles: bool = field(compare=False)
+    correct: bool = field(compare=False)
+    message: str = field(compare=False)
+    triton_p20: float | None = field(compare=False)
+    triton_p50: float | None = field(compare=False)
+    triton_p80: float | None = field(compare=False)
+    triton_p90: float | None = field(compare=False)
+    triton_p95: float | None = field(compare=False)
+    triton_p99: float | None = field(compare=False)
+    p20: float | None = field(compare=False)
+    p50: float | None = field(compare=False)
+    p80: float | None = field(compare=False)
+    p90: float | None = field(compare=False)
+    p95: float | None = field(compare=False)
+    p99: float | None = field(compare=False)
+    speedup_vs_triton: float | None = field(compare=False)
+    compile_output: str = field(default="", compare=False)
+    compile_error: str = field(default="", compare=False)
+    timing_error: str = field(default="", compare=False)
+    ncu_report: dict[str, Any] = field(default_factory=dict, compare=False)
+    sanitizer_report: dict[str, object] = field(default_factory=dict, compare=False)
+    volta_report: dict[str, Any] = field(default_factory=dict, compare=False)
+    verifier_report: dict[str, Any] = field(default_factory=dict, compare=False)
+
+    def __post_init__(self):
+        self.sort_index = self._sort_key()
+
+    @classmethod
+    def failed(
+        cls,
+        *,
+        kernel_name: str,
+        git_commit_hash: str,
+        compiles: bool,
+        correct: bool,
+        message: str,
+        compile_output: str = "",
+        compile_error: str = "",
+        timing_error: str = "",
+        ncu_report: dict[str, Any] | None = None,
+        sanitizer_report: dict[str, object] | None = None,
+        volta_report: dict[str, Any] | None = None,
+        verifier_report: dict[str, Any] | None = None,
+    ) -> EvaluatedCandidate:
+        return cls(
+            kernel_name=kernel_name,
+            git_commit_hash=git_commit_hash,
+            compiles=compiles,
+            correct=correct,
+            message=message,
+            triton_p20=None,
+            triton_p50=None,
+            triton_p80=None,
+            triton_p90=None,
+            triton_p95=None,
+            triton_p99=None,
+            p20=None,
+            p50=None,
+            p80=None,
+            p90=None,
+            p95=None,
+            p99=None,
+            speedup_vs_triton=0,
+            compile_output=compile_output,
+            compile_error=compile_error,
+            timing_error=timing_error,
+            ncu_report=ncu_report or {},
+            sanitizer_report=sanitizer_report or {},
+            volta_report=volta_report or {},
+            verifier_report=verifier_report or {},
+        )
+
+    def _sort_key(self) -> tuple[int, float]:
+        message = (self.message or "").lower()
+        compile_error = (self.compile_error or "").lower()
+
+        if "syntax" in message or "syntax" in compile_error:
+            return (2, math.inf)
+
+        if not self.compiles:
+            return (1, math.inf)
+
+        return (0, self.p50 if self.p50 is not None else math.inf)
+
+    @property
+    def passed(self) -> bool:
+        return self.compiles and self.correct
+
+    def selection_record(self) -> dict[str, Any]:
+        return {
+            "compiles": self.compiles,
+            "correct": self.correct,
+            "triton_p20": self.triton_p20,
+            "triton_p50": self.triton_p50,
+            "triton_p80": self.triton_p80,
+            "triton_p90": self.triton_p90,
+            "triton_p95": self.triton_p95,
+            "triton_p99": self.triton_p99,
+            "p20": self.p20,
+            "p50": self.p50,
+            "p80": self.p80,
+            "p90": self.p90,
+            "p95": self.p95,
+            "p99": self.p99,
+            "execution_time": self.p50,
+            "runtime": self.p50,
+            "speedup_vs_triton": self.speedup_vs_triton,
+        }
+
+    def artifact_summary(self) -> dict[str, Any]:
+        return self.to_dict()
+
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        data.pop("sort_index", None)
+        data["passed"] = self.passed
+        return {
+            "kernel_name": data.pop("kernel_name", ""),
+            "git_commit_hash": data.pop("git_commit_hash", ""),
+            **data,
+        }
+
+    def to_json(self, indent: int = 2) -> str:
+        data = self.to_dict()
+        ncu_report = data.get("ncu_report")
+        if isinstance(ncu_report, dict):
+            ncu_report.pop("source_report", None)
+        return json.dumps(
+            _json_safe(data),
+            indent=indent,
+            ensure_ascii=False,
+        )
+
+    def to_llm(self, *, ncu_line_by_line: list[dict[str, Any]] | None = None) -> str:
+        """Return evaluation feedback relevant to improving a candidate."""
+        data = self.to_dict()
+        for field_name in ("kernel_name", "git_commit_hash", "payload"):
+            data.pop(field_name, None)
+
+        if self.compiles:
+            data.pop("compile_output", None)
+            data.pop("compile_error", None)
+
+        if self.passed:
+            data.pop("sanitizer_report", None)
+            data.pop("volta_report", None)
+            data.pop("verifier_report", None)
+
+        ncu_report = data.pop("ncu_report", {})
+        if isinstance(ncu_report, dict):
+            for section in ("derived", "summary"):
+                if ncu_report.get(section):
+                    data[section] = ncu_report[section]
+
+            ncu_status = {
+                key: ncu_report[key]
+                for key in ("available", "return_code", "error")
+                if ncu_report.get(key) not in (None, "", 0, True)
+            }
+            if ncu_status:
+                data["ncu_report"] = ncu_status
+
+        if ncu_line_by_line:
+            data["ncu_line_by_line"] = ncu_line_by_line
+
+        data = {
+            key: value for key, value in data.items() if value not in (None, "", {}, [])
+        }
+        return json.dumps(_json_safe(data), ensure_ascii=False)
