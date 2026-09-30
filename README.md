@@ -209,3 +209,17 @@ actually computes:
   modified scale, a "ReLU" kernel whose comments ask for GELU, and an FP32
   matmul (`MatrixMultiplicationFloat32`) whose comment claims tensor cores are
   fine despite `input_precision="ieee"`.
+
+  ## Citation
+
+```bibtex
+@misc{costa2026aicompilercompilingtriton,
+      title={AI as a Compiler: Compiling Triton kernels without the Triton compiler}, 
+      author={François Costa and Charly Castes and Thomas Bourgeat and Azalia Mirhoseini},
+      year={2026},
+      eprint={2609.36800},
+      archivePrefix={arXiv},
+      primaryClass={cs.AI},
+      url={https://arxiv.org/abs/2609.36800}, 
+}
+```
