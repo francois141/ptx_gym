@@ -6,6 +6,8 @@ import re
 import subprocess
 
 import torch
+from triton.backends.nvidia.compiler import sm_arch_from_capability
+from triton.runtime import driver
 
 
 _PTXAS_BIN_DIR = (
@@ -156,16 +158,8 @@ def get_ptx_system_config() -> tuple[str, str, int]:
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is not available on this system.")
 
-    major, minor = torch.cuda.get_device_capability()
-    target = f"sm_{major}{minor}"
-    if target == "sm_90":
-        # Temporary hack until a better target-version mapping is available.
-        target = "sm_90a"
-
-    if target == "sm_100":
-        # Temporary hack until a better target-version mapping is available.
-        target = "sm_100a"
-
+    # Same target string Triton's CUDA backend writes to `.target` in make_ptx.
+    target = sm_arch_from_capability(driver.active.get_current_target().arch)
     address_size = ctypes.sizeof(ctypes.c_void_p) * 8
 
     try:
