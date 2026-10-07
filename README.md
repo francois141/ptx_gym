@@ -12,6 +12,11 @@
   <img alt="Hardware: NVIDIA GPU" src="https://img.shields.io/badge/hardware-NVIDIA%20GPU-76B900">
 </p>
 
+> [!NOTE]
+> To test the Triton AI Compiler, the LLM agent built on PTX Gym, use the
+> [triton_ai_compiler](https://github.com/francois141/triton_ai_compiler)
+> repository.
+
 <p align="center">
   <a href="#quickrun">Quickrun</a> ·
   <a href="#overview">Overview</a> ·
@@ -161,9 +166,6 @@ A few rules apply to every candidate:
 
 Releasing more details about this section soon!
 
-### Triton AI Compiler
-
-Releasing more details about this section soon!
 ## Kernel suite
 
 Each kernel is a subclass of
