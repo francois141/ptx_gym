@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 import ctypes
-from pathlib import Path
 import re
 import subprocess
+from pathlib import Path
 
 import torch
-from triton.backends.nvidia.compiler import sm_arch_from_capability
-from triton.runtime import driver
-
 
 _PTXAS_BIN_DIR = (
     Path(__file__).resolve().parents[2]
@@ -27,9 +24,7 @@ def _cuda_release_to_ptx_version(cuda_version: str) -> str:
     try:
         major, minor = map(int, cuda_version.split(".")[:2])
     except (ValueError, IndexError) as exc:
-        raise ValueError(
-            f"Invalid CUDA version format: {cuda_version!r}"
-        ) from exc
+        raise ValueError(f"Invalid CUDA version format: {cuda_version!r}") from exc
 
     ptx_mapping: dict[tuple[int, int], str] = {
         (11, 0): "7.0",
@@ -50,6 +45,7 @@ def _cuda_release_to_ptx_version(cuda_version: str) -> str:
         (12, 6): "8.5",
         (12, 7): "8.6",
         (12, 8): "8.7",
+        (12, 9): "8.8",
         (13, 0): "9.0",
         (13, 1): "9.1",
         (13, 2): "9.2",
@@ -58,12 +54,9 @@ def _cuda_release_to_ptx_version(cuda_version: str) -> str:
 
     key = (major, minor)
     if key not in ptx_mapping:
-        supported = ", ".join(
-            f"{maj}.{min_}" for maj, min_ in sorted(ptx_mapping)
-        )
+        supported = ", ".join(f"{maj}.{min_}" for maj, min_ in sorted(ptx_mapping))
         raise ValueError(
-            f"Unsupported CUDA version: {cuda_version}. "
-            f"Supported versions: {supported}"
+            f"Unsupported CUDA version: {cuda_version}. Supported versions: {supported}"
         )
 
     return ptx_mapping[key]
@@ -78,7 +71,9 @@ def get_available_video_memory_bytes(device_index: int | None = None) -> int:
     """
     Return currently available NVIDIA GPU memory in bytes.
 
-    The value is queried with ``nvidia-smi`` in MiB and converted to bytes.
+    Prefer ``nvidia-smi``; fall back to CUDA when its memory fields are
+    unavailable, as on DGX Spark. CUDA's free-memory estimate is conservative
+    on unified-memory systems: it excludes memory reclaimable through swap.
     """
     command = [
         "nvidia-smi",
@@ -88,28 +83,37 @@ def get_available_video_memory_bytes(device_index: int | None = None) -> int:
     if device_index is not None:
         command.insert(1, f"--id={device_index}")
 
+    query_error = None
+    output = ""
     try:
         output = subprocess.check_output(
             command,
             text=True,
             stderr=subprocess.DEVNULL,
         )
-    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
-        raise RuntimeError("Unable to query available video memory with nvidia-smi.") from exc
+    except (OSError, subprocess.CalledProcessError) as exc:
+        query_error = str(exc)
 
     memory_mib = []
     for line in output.splitlines():
         line = line.strip()
         if not line:
             continue
-        match = re.search(r"\d+", line)
+        match = re.fullmatch(r"(\d+)(?:\s+MiB)?", line)
         if match is not None:
-            memory_mib.append(int(match.group(0)))
+            memory_mib.append(int(match.group(1)))
 
-    if not memory_mib:
-        raise RuntimeError(f"Unable to parse available video memory from nvidia-smi output: {output!r}")
+    if memory_mib:
+        return min(memory_mib) * 1024 * 1024
 
-    return min(memory_mib) * 1024 * 1024
+    try:
+        free_bytes, _ = torch.cuda.mem_get_info(device_index)
+        return int(free_bytes)
+    except (AssertionError, OSError, RuntimeError, ValueError) as exc:
+        raise RuntimeError(
+            "Unable to query available video memory with nvidia-smi "
+            f"({query_error or repr(output)}) or CUDA ({exc})."
+        ) from exc
 
 
 def resolve_git_commit_hash() -> str:
@@ -120,7 +124,7 @@ def resolve_git_commit_hash() -> str:
             text=True,
             stderr=subprocess.DEVNULL,
         ).strip()
-    except Exception:
+    except (OSError, subprocess.CalledProcessError):
         return "unknown"
 
 
@@ -133,9 +137,7 @@ def get_ptxas_path(target: str | int | None) -> Path:
     if target is None:
         return _PTXAS_PATH
 
-    if isinstance(target, int):
-        target = f"sm_{target}"
-    elif not str(target).startswith("sm_"):
+    if isinstance(target, int) or not str(target).startswith("sm_"):
         target = f"sm_{target}"
 
     capability_match = re.match(r"sm_(\d+)", target)
@@ -148,37 +150,41 @@ def get_ptxas_path(target: str | int | None) -> Path:
     return _PTXAS_PATH
 
 
-def get_ptx_system_config() -> tuple[str, str, int]:
-    """
-    Returns:
-        version: PTX ISA version, e.g. "9.0"
-        target: CUDA target architecture, e.g. "sm_89"
-        address_size: pointer size in bits, usually 64
-    """
-    if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is not available on this system.")
+def _get_ptx_target() -> str:
+    # Keep environment/memory helpers importable in a CPU-only installation.
+    from triton.backends.nvidia.compiler import sm_arch_from_capability
+    from triton.runtime import driver
 
     # Same target string Triton's CUDA backend writes to `.target` in make_ptx.
-    target = sm_arch_from_capability(driver.active.get_current_target().arch)
-    address_size = ctypes.sizeof(ctypes.c_void_p) * 8
+    return sm_arch_from_capability(driver.active.get_current_target().arch)
+
+
+def _guess_ptx_version_from_ptxas(target: str | int | None = None) -> str:
+    assembler = get_ptxas_path(target)
 
     try:
         output = subprocess.check_output(
-            [str(_PTXAS_PATH), "--version"],
+            [str(assembler), "--version"],
             stderr=subprocess.STDOUT,
         ).decode("utf-8")
     except (FileNotFoundError, subprocess.CalledProcessError) as exc:
         raise RuntimeError(
-            f"Unable to determine PTX version from {_PTXAS_PATH}."
+            f"Unable to determine PTX version from {assembler}."
         ) from exc
 
     match = re.search(r"release\s+(\d+\.\d+)", output)
     if match is None:
-        raise RuntimeError(
-            "Unable to parse CUDA release from ptxas --version output."
-        )
+        raise RuntimeError("Unable to parse CUDA release from ptxas --version output.")
 
     detected_cuda_version = match.group(1)
-    version = _cuda_release_to_ptx_version(detected_cuda_version)
+    return _cuda_release_to_ptx_version(detected_cuda_version)
 
-    return version, target, address_size
+
+def get_ptx_system_config() -> tuple[str, str, int]:
+    """Return the selected assembler's PTX ISA version, target and address size."""
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is not available on this system.")
+
+    target = _get_ptx_target()
+    version = _guess_ptx_version_from_ptxas(target)
+    return version, target, ctypes.sizeof(ctypes.c_void_p) * 8

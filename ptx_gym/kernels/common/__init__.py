@@ -26,6 +26,14 @@ from .rope import RoPEFloat8Kernel, RoPEFloat16Kernel
 from .sigmoid import SigmoidFloat8Kernel, SigmoidFloat16Kernel
 from .silu import SiLUFloat8Kernel, SiLUFloat16Kernel
 from .softmax import SoftmaxFloat8Kernel, SoftmaxFloat16Kernel
+from .softmax_ce_hvp import (
+    SoftmaxCrossEntropyHVPBFloat16Kernel,
+    SoftmaxCrossEntropyHVPCachedBFloat16Kernel,
+    SoftmaxCrossEntropyHVPCachedFloat16Kernel,
+    SoftmaxCrossEntropyHVPCachedFloat32Kernel,
+    SoftmaxCrossEntropyHVPFloat16Kernel,
+    SoftmaxCrossEntropyHVPFloat32Kernel,
+)
 from .swiglu import SwiGLUFloat8Kernel, SwiGLUFloat16Kernel
 
 MatrixMultiplicationFloat16Kernel = MatrixMultiplicationFloat16
@@ -58,6 +66,12 @@ __all__ = [
     "SiLUFloat16Kernel",
     "SigmoidFloat8Kernel",
     "SigmoidFloat16Kernel",
+    "SoftmaxCrossEntropyHVPBFloat16Kernel",
+    "SoftmaxCrossEntropyHVPCachedBFloat16Kernel",
+    "SoftmaxCrossEntropyHVPCachedFloat16Kernel",
+    "SoftmaxCrossEntropyHVPCachedFloat32Kernel",
+    "SoftmaxCrossEntropyHVPFloat16Kernel",
+    "SoftmaxCrossEntropyHVPFloat32Kernel",
     "SoftmaxFloat8Kernel",
     "SoftmaxFloat16Kernel",
     "SwiGLUFloat8Kernel",

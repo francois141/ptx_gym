@@ -181,6 +181,7 @@ comes in `Float16` and `Float8` (E4M3) versions:
 | GEMM-like | `MatrixMultiplicationFloat{16,8}`, `MatrixVectorMultiplicationFloat*Kernel`, `Convolution2DFloat*Kernel`, `FusedGEMMAddSiLUFloat*Kernel`, `FusedGEMMAddGELUFloat*Kernel` |
 | Reductions and normalization | `SoftmaxFloat*Kernel`, `RMSNormFloat*Kernel`, `ReductionSumFloat*Kernel`, `RoPEFloat*Kernel` |
 | Elementwise | `ReLUFloat*Kernel`, `SiLUFloat*Kernel`, `SigmoidFloat*Kernel`, `GELUFloat*Kernel`, `SwiGLUFloat*Kernel`, `AddFloat*Kernel` |
+| Classification curvature | `SoftmaxCrossEntropyHVP{Float32,Float16,BFloat16}Kernel`, `SoftmaxCrossEntropyHVPCached{Float32,Float16,BFloat16}Kernel` (FP32 outputs and cached probabilities) |
 
 **Kernels from recent papers** ([`kernels/papers`](ptx_gym/kernels/papers)).
 These are the authors' official Triton implementations. We only removed masks

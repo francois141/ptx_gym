@@ -63,6 +63,67 @@ def test_get_ptxas_path_prefers_blackwell_binary(
     monkeypatch.setattr(environment, "_PTXAS_BLACKWELL_PATH", blackwell_path)
 
     assert get_ptxas_path("sm_100") == blackwell_path
+    assert get_ptxas_path("sm_121a") == blackwell_path
+
+
+def test_blackwell_system_config_uses_selected_assembler(monkeypatch, tmp_path):
+    blackwell_path = tmp_path / "ptxas-blackwell"
+    blackwell_path.touch()
+    monkeypatch.setattr(environment, "_PTXAS_BLACKWELL_PATH", blackwell_path)
+    monkeypatch.setattr(environment.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(environment, "_get_ptx_target", lambda: "sm_121a")
+
+    def version_output(command, **kwargs):
+        assert command == [str(blackwell_path), "--version"]
+        return b"Cuda compilation tools, release 12.9, V12.9.86"
+
+    monkeypatch.setattr(environment.subprocess, "check_output", version_output)
+    assert get_ptx_system_config() == ("8.8", "sm_121a", 64)
+
+
+@pytest.mark.parametrize(
+    "release,version", [("12.8", "8.7"), ("12.9", "8.8"), ("13.0", "9.0")]
+)
+def test_cuda_release_mapping(release, version):
+    assert environment._cuda_release_to_ptx_version(release) == version
+
+
+@pytest.mark.parametrize(
+    "output", ["[N/A]", "Not Supported", "", "GPU 0: Not Supported"]
+)
+def test_memory_query_falls_back_to_cuda(monkeypatch, output):
+    monkeypatch.setattr(environment.subprocess, "check_output", lambda *a, **k: output)
+    calls = []
+
+    def cuda_memory(device):
+        calls.append(device)
+        return 123456789, 987654321
+
+    monkeypatch.setattr(environment.torch.cuda, "mem_get_info", cuda_memory)
+    assert get_available_video_memory_bytes(2) == 123456789
+    assert calls == [2]
+
+
+def test_missing_nvidia_smi_falls_back_to_cuda(monkeypatch):
+    def missing(*args, **kwargs):
+        raise FileNotFoundError("nvidia-smi")
+
+    monkeypatch.setattr(environment.subprocess, "check_output", missing)
+    monkeypatch.setattr(
+        environment.torch.cuda, "mem_get_info", lambda device: (1024, 2048)
+    )
+    assert get_available_video_memory_bytes() == 1024
+
+
+def test_memory_query_reports_both_failures(monkeypatch):
+    monkeypatch.setattr(environment.subprocess, "check_output", lambda *a, **k: "N/A")
+
+    def unavailable(device):
+        raise RuntimeError("CUDA unavailable")
+
+    monkeypatch.setattr(environment.torch.cuda, "mem_get_info", unavailable)
+    with pytest.raises(RuntimeError, match="nvidia-smi.*CUDA unavailable"):
+        get_available_video_memory_bytes()
 
 
 def test_compile_ptx(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -4,9 +4,8 @@ import pytest
 import torch
 
 from ptx_gym.evaluation import OutputVerifier
-from ptx_gym.kernels.base import TritonPTXKernel
 from ptx_gym.kernels import kernel_list
-
+from ptx_gym.kernels.base import TritonPTXKernel
 
 pytestmark = pytest.mark.skipif(
     not torch.cuda.is_available(),
@@ -40,7 +39,7 @@ def disable_autotuning(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.parametrize("kernel_cls", kernel_list, ids=lambda cls: cls.__name__)
 def test_kernel_matches_torch(kernel_cls: type) -> None:
     kernel = kernel_cls()
-    tolerance = 1e-2
+    tolerance = min(1e-2, getattr(kernel, "verification_tolerance", 1e-2))
     verifier = OutputVerifier(
         iterations=250,
         seed=42,
