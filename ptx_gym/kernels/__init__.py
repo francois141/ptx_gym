@@ -4,6 +4,10 @@ from .adversial import (
     AdversialReLUKernel,
     MatrixMultiplicationFloat32,
 )
+from .after_gpt6_cutoff import (
+    LigerSelectiveLogprobBackward,
+    LigerSelectiveLogprobForward,
+)
 from .common import (
     AddFloat8Kernel,
     AddFloat16Kernel,
@@ -160,6 +164,15 @@ paper_kernel_list = [
     SageAttentionICLR2025,
 ]
 
+after_gpt6_cutoff_kernel_list = [
+    LigerSelectiveLogprobForward,
+    LigerSelectiveLogprobBackward,
+]
+
 kernel_list = (
-    common_list + random_kernel_list + adversial_kernel_list + paper_kernel_list
+    common_list
+    + random_kernel_list
+    + adversial_kernel_list
+    + paper_kernel_list
+    + after_gpt6_cutoff_kernel_list
 )
